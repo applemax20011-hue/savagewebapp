@@ -1,296 +1,63 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
+import axios from 'axios';
 
-// --- НАСТРОЙКИ ---
-const SOUNDS = {
-    click: 'https://cdn.freesound.org/previews/613/613867_11632007-lq.mp3',
-    spin: 'https://cdn.freesound.org/previews/32/32184_379750-lq.mp3',
-    win: 'https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3',
-    dice: 'https://cdn.freesound.org/previews/376/376742_5076729-lq.mp3',
-    lose: 'https://cdn.freesound.org/previews/76/76362_1083696-lq.mp3',
-    select: 'https://cdn.freesound.org/previews/256/256113_3263906-lq.mp3'
+// !!! ВСТАВЬ СЮДА ССЫЛКУ С NGROK (С ДЕДИКА) !!!
+const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
+
+// --- ЗВУКИ ---
+const AUDIO = {
+    click: new Audio('https://cdn.freesound.org/previews/613/613867_11632007-lq.mp3'),
+    spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'), // Тик-тик
+    win: new Audio('https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3'),
+    lose: new Audio('https://cdn.freesound.org/previews/76/76362_1083696-lq.mp3'),
+    start: new Audio('https://cdn.freesound.org/previews/242/242501_4414128-lq.mp3') // Свуш старта
+};
+// Предзагрузка и громкость
+Object.values(AUDIO).forEach(a => { a.volume = 0.4; a.load(); });
+
+const playSfx = (name) => {
+    try {
+        AUDIO[name].currentTime = 0;
+        AUDIO[name].play();
+    } catch(e) {}
 };
 
+// Призы (ID должны совпадать с python api)
 const CASE_ITEMS = [
-    { id: 'empty',  name: "💀 ПУСТО",       val: 0,   type: 'empty',  color: '#3f3f46', weight: 45, img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
-    { id: 'check',  name: "💵 ЧЕК 0.5$",    val: 0.5, type: 'money',  color: '#3b82f6', weight: 30, img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'one',    name: "🍌 1$",          val: 1,   type: 'money',  color: '#8b5cf6', weight: 15, img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'status', name: "💎 STATUS",      val: 0,   type: 'status', color: '#ec4899', weight: 8,  img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
-    { id: 'five',   name: "🔥 5$ (ОКУП)",   val: 5,   type: 'money',  color: '#eab308', weight: 2,  img: "https://cdn-icons-png.flaticon.com/512/744/744922.png" },
+    { id: 'empty',  name: "💀 ПУСТО",       val: 0,   type: 'empty',  color: '#3f3f46', img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
+    { id: 'check',  name: "💵 ЧЕК 0.5$",    val: 0.5, type: 'money',  color: '#3b82f6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
+    { id: 'one',    name: "🍌 1$",          val: 1,   type: 'money',  color: '#8b5cf6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
+    { id: 'status', name: "💎 STATUS",      val: 0,   type: 'status', color: '#ec4899', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
+    { id: 'five',   name: "🔥 5$ (JACKPOT)",val: 5,   type: 'money',  color: '#eab308', img: "https://cdn-icons-png.flaticon.com/512/744/744922.png" },
 ];
 
-const CARD_WIDTH = 148;
+const CARD_WIDTH = 148; 
 
-// Аудио-менеджер
-const playAudio = (name) => {
-    const audio = new Audio(SOUNDS[name]);
-    audio.volume = 0.4;
-    audio.play().catch(e => console.log("Audio play failed (user didn't interact yet)"));
-};
-
-// === КОМПОНЕНТ: МЕНЮ ===
-const MainMenu = ({ setGame }) => (
-    <div className="menu-grid animate-in">
-        <div className="game-card rocket" onClick={() => { playAudio('click'); setGame('rocket'); }}>
-            <div className="game-icon">🚀</div>
-            <div className="game-info">
-                <h3>Rocket Case</h3>
-                <p>Крути и выбивай призы</p>
-            </div>
-        </div>
-        <div className="game-card dice" onClick={() => { playAudio('click'); setGame('dice'); }}>
-            <div className="game-icon">🎲</div>
-            <div className="game-info">
-                <h3>Savage Dice</h3>
-                <p>Угадай число (x5)</p>
-            </div>
-        </div>
-    </div>
-);
-
-// === КОМПОНЕНТ: КУБИК (DICE) ===
-const DiceGame = ({ user, updateBalance, goBack }) => {
-    const [bet, setBet] = useState(10);
-    const [selectedNum, setSelectedNum] = useState(null); // Выбранное число
-    const [rolling, setRolling] = useState(false);
-    const [result, setResult] = useState(1);
-    const [winAmount, setWinAmount] = useState(0);
-
-    const rollDice = () => {
-        if (rolling) return;
-        if (!selectedNum) { window.Telegram?.WebApp?.showAlert("Выберите число!"); return; }
-        if (user.balance < bet) { window.Telegram?.WebApp?.showAlert("Мало денег!"); return; }
-
-        updateBalance(-bet);
-        setRolling(true);
-        setWinAmount(0);
-        playAudio('dice');
-
-        setTimeout(() => {
-            const diceVal = Math.floor(Math.random() * 6) + 1;
-            setResult(diceVal);
-            setRolling(false);
-
-            if (diceVal === selectedNum) {
-                const win = bet * 5; // x5 за угадывание
-                setWinAmount(win);
-                updateBalance(win);
-                playAudio('win');
-                confetti({ particleCount: 150, spread: 80, origin: { y: 0.5 } });
-                window.Telegram?.WebApp?.HapticFeedback.notificationOccurred('success');
-            } else {
-                playAudio('lose');
-                window.Telegram?.WebApp?.HapticFeedback.impactOccurred('heavy');
-            }
-        }, 2000);
-    };
-
-    return (
-        <div className="game-container animate-in">
-            <button className="back-btn" onClick={goBack}>‹ МЕНЮ</button>
-            <h2 className="game-title glitch" data-text="SAVAGE DICE">SAVAGE DICE</h2>
-
-            <div className="dice-scene">
-                <div className={`cube ${rolling ? 'rolling' : ''} show-${result}`}>
-                    {[1,2,3,4,5,6].map(n => <div key={n} className={`cube__face cube__face--${n}`}>{n}</div>)}
-                </div>
-            </div>
-
-            {winAmount > 0 ? (
-                <div className="status-msg win">ВЫИГРЫШ: +{winAmount}$</div>
-            ) : (
-                <div className="status-msg">Коэффициент: <span className="accent">x5</span></div>
-            )}
-
-            <div className="dice-selector">
-                <p>ВЫБЕРИ ЧИСЛО:</p>
-                <div className="numbers-grid">
-                    {[1,2,3,4,5,6].map(n => (
-                        <div 
-                            key={n} 
-                            className={`num-btn ${selectedNum === n ? 'active' : ''}`}
-                            onClick={() => { if(!rolling) { setSelectedNum(n); playAudio('select'); } }}
-                        >
-                            {n}
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="bet-controls">
-                <div className="bet-label">СТАВКА: <span className="val">${bet}</span></div>
-                <input 
-                    type="range" min="1" max="100" value={bet} 
-                    onChange={(e) => setBet(parseInt(e.target.value))} 
-                    className="slider" disabled={rolling}
-                />
-            </div>
-
-            <button className="action-btn" onClick={rollDice} disabled={rolling || !selectedNum}>
-                {rolling ? "БРОСАЮ..." : selectedNum ? `ПОСТАВИТЬ ${bet}$ НА [${selectedNum}]` : "ВЫБЕРИ ЧИСЛО"}
-            </button>
-        </div>
-    );
-};
-
-// === КОМПОНЕНТ: РАКЕТКА ===
-const RocketGame = ({ user, updateBalance, goBack }) => {
-    const PRICE = 5;
-    const [spinning, setSpinning] = useState(false);
-    const [offset, setOffset] = useState(0);
-    const [cards, setCards] = useState([]);
-    const [winItem, setWinItem] = useState(null);
-    const [isFast, setIsFast] = useState(false);
-    const [animDuration, setAnimDuration] = useState(0);
-
-    const generateStrip = () => {
-        let pool = [];
-        CASE_ITEMS.forEach(item => { for(let k=0; k<item.weight; k++) pool.push(item); });
-        let arr = [];
-        for(let i=0; i<100; i++) {
-            const item = pool[Math.floor(Math.random() * pool.length)];
-            arr.push({ ...item, uid: Math.random() });
-        }
-        return arr;
-    }
-
-    useEffect(() => { setCards(generateStrip()); }, []);
-
-    const spin = () => {
-        if (spinning) return;
-        if (user.balance < PRICE) { window.Telegram?.WebApp?.showAlert("Мало денег!"); return; }
-
-        setWinItem(null);
-        setAnimDuration(0);
-        setOffset(0);
-
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                startSpin();
-            });
-        });
-    };
-
-    const startSpin = () => {
-        updateBalance(-PRICE);
-        setSpinning(true);
-        playAudio('click');
-        window.Telegram?.WebApp?.HapticFeedback.impactOccurred('medium');
-
-        setTimeout(() => {
-            // Шансы подкручены в весе предметов (CASE_ITEMS)
-            let pool = [];
-            CASE_ITEMS.forEach(item => { for(let k=0; k<item.weight; k++) pool.push(item); });
-            const winner = pool[Math.floor(Math.random() * pool.length)];
-
-            const winPos = 60; 
-            const newStrip = generateStrip();
-            newStrip[winPos] = winner;
-            setCards(newStrip);
-
-            const containerW = window.innerWidth > 600 ? 600 : window.innerWidth - 32;
-            const shift = (Math.random() * CARD_WIDTH * 0.7) - (CARD_WIDTH * 0.35);
-            const finalScroll = (winPos * CARD_WIDTH) + (CARD_WIDTH / 2) - (containerW / 2) + shift;
-
-            const dur = isFast ? 0.5 : 5;
-            setAnimDuration(dur);
-            setOffset(-finalScroll);
-
-            if (!isFast) setTimeout(() => playAudio('spin'), 200);
-
-            setTimeout(() => finish(winner), dur * 1000);
-        }, 50);
-    };
-
-    const finish = (winner) => {
-        setSpinning(false);
-        setWinItem(winner);
-        
-        if (winner.type === 'money') {
-            updateBalance(winner.val);
-            playAudio('win');
-            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        } else if (winner.type === 'status') {
-            playAudio('win');
-            confetti({ particleCount: 150, spread: 90, colors: ['#ec4899'] });
-        } else {
-            playAudio('lose');
-        }
-        window.Telegram?.WebApp?.HapticFeedback.notificationOccurred(winner.type === 'empty' ? 'error' : 'success');
-    };
-
-    return (
-        <div className="game-container animate-in">
-            <button className="back-btn" onClick={goBack} disabled={spinning}>‹ МЕНЮ</button>
-            <h2 className="game-title glitch" data-text="ROCKET CASE">ROCKET CASE</h2>
-
-            <div className="case-window">
-                <div className="pointer-line"></div>
-                <div className="track" style={{ 
-                    transform: `translateX(${offset}px)`,
-                    transition: `transform ${animDuration}s cubic-bezier(0.12, 0, 0.30, 1)`
-                }}>
-                    {cards.map((item, i) => (
-                        <div key={i} className="item-card" style={{ '--item-color': item.color }}>
-                            <img src={item.img} className="item-img" alt="" />
-                            <div className="item-name" style={{color:item.color}}>{item.name}</div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="controls">
-                <div className="fast-switch-wrapper">
-                    <label className="fast-switch">
-                        <input type="checkbox" checked={isFast} onChange={(e) => setIsFast(e.target.checked)} disabled={spinning} />
-                        <span className="slider"></span>
-                        <span className="label-text">⚡ БЫСТРО</span>
-                    </label>
-                </div>
-                <button onClick={spin} disabled={spinning} className={`action-btn ${spinning ? 'disabled' : ''}`}>
-                    {spinning ? "КРУТИМ..." : `ОТКРЫТЬ ЗА ${PRICE}$`}
-                </button>
-            </div>
-
-            {winItem && (
-                <div className="win-modal-overlay" onClick={() => setWinItem(null)}>
-                    <div className="win-card" onClick={e => e.stopPropagation()}>
-                        <div className="win-glow" style={{background: winItem.color}}></div>
-                        <div className="win-title">{winItem.type === 'empty' ? 'НЕ ПОВЕЗЛО' : 'ВЫИГРЫШ'}</div>
-                        <img src={winItem.img} className="win-img" alt="" />
-                        <div className="win-name" style={{color: winItem.color}}>{winItem.name}</div>
-                        {winItem.type === 'status' && <div className="win-desc">Пиши админу!</div>}
-                        <button className="collect-btn" onClick={() => setWinItem(null)}>
-                            {winItem.type === 'empty' ? 'ЗАКРЫТЬ' : 'ЗАБРАТЬ'}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// === ГЛАВНЫЙ ===
+// === ГЛАВНЫЙ ЭКРАН ===
 function App() {
-    const [user, setUser] = useState({ username: 'Savage User', id: 0, balance: 500 });
-    const [activeGame, setActiveGame] = useState(null);
+    const [user, setUser] = useState({ id: 0, username: 'Loading...', balance: 0 });
+    const [page, setPage] = useState('menu'); // menu, rocket, dice
 
-    const tg = window.Telegram?.WebApp;
-
+    // Инициализация (берем ID из телеги и тянем баланс с сервера)
     useEffect(() => {
+        const tg = window.Telegram?.WebApp;
         tg?.ready();
         tg?.expand();
-        if(tg?.initDataUnsafe?.user) {
-            setUser(prev => ({...prev, username: tg.initDataUnsafe.user.username, id: tg.initDataUnsafe.user.id }));
-        }
+        
+        // Тестовый ID если не в телеге
+        const uid = tg?.initDataUnsafe?.user?.id || 7086207854; 
+
+        axios.get(`${API_URL}/init/${uid}`)
+            .then(res => setUser({ id: uid, ...res.data }))
+            .catch(() => setUser({ id: uid, username: 'Error', balance: 0 }));
     }, []);
 
-    const updateBalance = (delta) => {
-        setUser(prev => ({ ...prev, balance: prev.balance + delta }));
-    };
+    const updateBalance = (newBal) => setUser(prev => ({...prev, balance: newBal}));
 
     return (
         <div className="app-container">
+            {/* ШАПКА */}
             <div className="header">
                 <div className="user-block">
                     <div className="avatar">🦈</div>
@@ -305,11 +72,231 @@ function App() {
                 </div>
             </div>
 
-            {!activeGame && <MainMenu setGame={setActiveGame} />}
-            {activeGame === 'rocket' && <RocketGame user={user} updateBalance={updateBalance} goBack={() => setActiveGame(null)} />}
-            {activeGame === 'dice' && <DiceGame user={user} updateBalance={updateBalance} goBack={() => setActiveGame(null)} />}
+            {page === 'menu' && <Menu setPage={setPage} />}
+            {page === 'rocket' && <RocketGame user={user} setPage={setPage} onUpdate={updateBalance} />}
+            {page === 'dice' && <DiceGame user={user} setPage={setPage} onUpdate={updateBalance} />}
         </div>
     );
 }
+
+const Menu = ({ setPage }) => (
+    <div className="menu-grid animate-in">
+        <div className="game-card rocket" onClick={() => { playSfx('click'); setPage('rocket'); }}>
+            <div className="game-icon">🚀</div>
+            <div className="game-info">
+                <h3>Rocket Case</h3>
+                <p>Выбей статус или $</p>
+            </div>
+        </div>
+        <div className="game-card dice" onClick={() => { playSfx('click'); setPage('dice'); }}>
+            <div className="game-icon">🎲</div>
+            <div className="game-info">
+                <h3>Dice x5</h3>
+                <p>Угадай число</p>
+            </div>
+        </div>
+    </div>
+);
+
+// === ИГРА: КУБИК ===
+const DiceGame = ({ user, setPage, onUpdate }) => {
+    const [bet, setBet] = useState(1);
+    const [num, setNum] = useState(null);
+    const [rolling, setRolling] = useState(false);
+    const [result, setResult] = useState(1);
+    const [win, setWin] = useState(0);
+
+    const play = async () => {
+        if(rolling) return;
+        if(!num) return window.Telegram?.WebApp?.showAlert("Выбери число!");
+        
+        playSfx('click');
+        setRolling(true);
+        setWin(0);
+
+        try {
+            // Запрос к серверу
+            const res = await axios.post(`${API_URL}/play`, {
+                user_id: user.id, game: 'dice', bet: bet, selected_num: num
+            });
+            
+            // Сервер уже списал и посчитал. Показываем анимацию.
+            const serverResult = res.data.dice_result;
+            const newBal = res.data.new_balance;
+            const winAmt = res.data.win_amount;
+
+            // Анимация 1.5 сек
+            setTimeout(() => {
+                setResult(serverResult);
+                setRolling(false);
+                onUpdate(newBal); // Обновляем баланс в шапке
+
+                if (winAmt > 0) {
+                    setWin(winAmt);
+                    playSfx('win');
+                    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                } else {
+                    playSfx('lose');
+                }
+            }, 1500);
+
+        } catch (e) {
+            setRolling(false);
+            window.Telegram?.WebApp?.showAlert("Ошибка или мало денег!");
+        }
+    };
+
+    return (
+        <div className="game-container animate-in">
+            <button className="back-btn" onClick={() => setPage('menu')}>‹ МЕНЮ</button>
+            <h2 className="game-title glitch" data-text="DICE x5">DICE x5</h2>
+
+            <div className="dice-scene">
+                <div className={`cube ${rolling ? 'rolling' : ''} show-${result}`}>
+                    {[1,2,3,4,5,6].map(n => <div key={n} className={`cube__face cube__face--${n}`}>{n}</div>)}
+                </div>
+            </div>
+
+            {win > 0 && <div className="status-msg win">ВЫИГРЫШ: +{win}$</div>}
+
+            <div className="dice-selector">
+                <div className="numbers-grid">
+                    {[1,2,3,4,5,6].map(n => (
+                        <div key={n} className={`num-btn ${num===n?'active':''}`} onClick={() => { if(!rolling) setNum(n); playSfx('click'); }}>{n}</div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="bet-controls">
+                <div className="bet-label">СТАВКА: <span className="val">${bet}</span></div>
+                <input type="range" min="1" max="50" value={bet} onChange={e => setBet(Number(e.target.value))} className="slider" disabled={rolling} />
+            </div>
+
+            <button className="action-btn" onClick={play} disabled={rolling || !num}>
+                {rolling ? "БРОСАЮ..." : num ? `СТАВКА ${bet}$ НА [${num}]` : "ВЫБЕРИ ЧИСЛО"}
+            </button>
+        </div>
+    );
+};
+
+// === ИГРА: РАКЕТКА ===
+const RocketGame = ({ user, setPage, onUpdate }) => {
+    const [spinning, setSpinning] = useState(false);
+    const [cards, setCards] = useState([]);
+    const [offset, setOffset] = useState(0);
+    const [animTime, setAnimTime] = useState(0);
+    const [winItem, setWinItem] = useState(null);
+    const [fast, setFast] = useState(false);
+
+    // Генерация случайной ленты (визуал)
+    const genStrip = () => {
+        let arr = [];
+        for(let i=0; i<80; i++) arr.push({...CASE_ITEMS[Math.floor(Math.random()*CASE_ITEMS.length)], uid: Math.random()});
+        return arr;
+    }
+    useEffect(() => setCards(genStrip()), []);
+
+    const play = async () => {
+        if(spinning) return;
+        
+        setWinItem(null);
+        setAnimTime(0);
+        setOffset(0);
+
+        // Даем время на ресет CSS
+        setTimeout(async () => {
+            try {
+                setSpinning(true);
+                playSfx('start');
+                
+                // ЗАПРОС К СЕРВЕРУ (Списываем 5$, получаем ID победителя)
+                const res = await axios.post(`${API_URL}/play`, { user_id: user.id, game: 'rocket' });
+                const winnerId = res.data.winner_id;
+                const newBal = res.data.new_balance;
+
+                // Находим объект приза
+                const winner = CASE_ITEMS.find(i => i.id === winnerId);
+
+                // Подставляем победителя в ленту (на 60 позицию)
+                const newCards = genStrip();
+                newCards[60] = winner;
+                setCards(newCards);
+
+                // Расчет позиции
+                const winPos = 60;
+                const containerW = window.innerWidth > 600 ? 600 : window.innerWidth - 32;
+                const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
+                const finalScroll = (winPos * CARD_WIDTH) + (CARD_WIDTH / 2) - (containerW / 2) + shift;
+
+                const duration = fast ? 0.5 : 5;
+                setAnimTime(duration);
+                setOffset(-finalScroll);
+
+                if(!fast) setTimeout(() => playSfx('spin'), 200);
+
+                setTimeout(() => {
+                    setSpinning(false);
+                    setWinItem(winner);
+                    onUpdate(newBal);
+                    
+                    if(winner.val > 0 || winner.id === 'status') {
+                        playSfx('win');
+                        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                    } else {
+                        playSfx('lose');
+                    }
+                }, duration * 1000);
+
+            } catch (e) {
+                setSpinning(false);
+                window.Telegram?.WebApp?.showAlert("Ошибка или мало денег!");
+            }
+        }, 50);
+    };
+
+    return (
+        <div className="game-container animate-in">
+            <button className="back-btn" onClick={() => setPage('menu')} disabled={spinning}>‹ МЕНЮ</button>
+            <h2 className="game-title glitch" data-text="ROCKET">ROCKET</h2>
+
+            <div className="case-window">
+                <div className="pointer-line"></div>
+                <div className="track" style={{ 
+                    transform: `translateX(${offset}px)`,
+                    transition: `transform ${animTime}s cubic-bezier(0.1, 0, 0.2, 1)`
+                }}>
+                    {cards.map((item, i) => (
+                        <div key={i} className="item-card" style={{'--item-color': item.color}}>
+                            <img src={item.img} className="item-img" />
+                            <div className="item-name" style={{color:item.color}}>{item.name}</div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="controls">
+                <label className="fast-switch">
+                    <input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)} disabled={spinning} />
+                    <span className="slider"></span>
+                    <span className="label-text">⚡ БЫСТРО</span>
+                </label>
+                <button onClick={play} disabled={spinning} className="action-btn">
+                    {spinning ? "КРУТИМ..." : "ОТКРЫТЬ (5$)"}
+                </button>
+            </div>
+
+            {winItem && (
+                <div className="win-modal-overlay" onClick={() => setWinItem(null)}>
+                    <div className="win-card animate-pop-up" onClick={e => e.stopPropagation()}>
+                        <div className="win-title">{winItem.val > 0 ? 'ВЫИГРЫШ' : 'РЕЗУЛЬТАТ'}</div>
+                        <img src={winItem.img} className="win-img" />
+                        <div className="win-name" style={{color: winItem.color}}>{winItem.name}</div>
+                        <button className="collect-btn" onClick={() => setWinItem(null)}>ЗАБРАТЬ</button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 export default App;
