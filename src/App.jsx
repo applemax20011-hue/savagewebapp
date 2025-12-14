@@ -5,59 +5,74 @@ import axios from 'axios';
 // !!! ВСТАВЬ СЮДА ССЫЛКУ С NGROK (С ДЕДИКА) !!!
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
 
+// Настройки Axios для обхода защиты Ngrok
+const api = axios.create({
+    baseURL: API_URL,
+    headers: {
+        "ngrok-skip-browser-warning": "true", // <--- ВОТ ЭТО ИСПРАВЛЯЕТ ОШИБКУ
+        "Content-Type": "application/json"
+    }
+});
+
 // --- ЗВУКИ ---
 const AUDIO = {
     click: new Audio('https://cdn.freesound.org/previews/613/613867_11632007-lq.mp3'),
-    spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'), // Тик-тик
+    spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'),
     win: new Audio('https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3'),
     lose: new Audio('https://cdn.freesound.org/previews/76/76362_1083696-lq.mp3'),
-    start: new Audio('https://cdn.freesound.org/previews/242/242501_4414128-lq.mp3') // Свуш старта
+    start: new Audio('https://cdn.freesound.org/previews/242/242501_4414128-lq.mp3')
 };
-// Предзагрузка и громкость
 Object.values(AUDIO).forEach(a => { a.volume = 0.4; a.load(); });
 
 const playSfx = (name) => {
     try {
         AUDIO[name].currentTime = 0;
-        AUDIO[name].play();
+        AUDIO[name].play().catch(() => {});
     } catch(e) {}
 };
 
-// Призы (ID должны совпадать с python api)
 const CASE_ITEMS = [
-    { id: 'empty',  name: "💀 ПУСТО",       val: 0,   type: 'empty',  color: '#3f3f46', img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
-    { id: 'check',  name: "💵 ЧЕК 0.5$",    val: 0.5, type: 'money',  color: '#3b82f6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'one',    name: "🍌 1$",          val: 1,   type: 'money',  color: '#8b5cf6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'status', name: "💎 STATUS",      val: 0,   type: 'status', color: '#ec4899', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
-    { id: 'five',   name: "🔥 5$ (JACKPOT)",val: 5,   type: 'money',  color: '#eab308', img: "https://cdn-icons-png.flaticon.com/512/744/744922.png" },
+    { id: 'empty',  name: "💀 ПУСТО",       val: 0,   type: 'empty',  color: '#3f3f46', weight: 45, img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
+    { id: 'check',  name: "💵 ЧЕК 0.5$",    val: 0.5, type: 'money',  color: '#3b82f6', weight: 30, img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
+    { id: 'one',    name: "🍌 1$",          val: 1,   type: 'money',  color: '#8b5cf6', weight: 15, img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
+    { id: 'status', name: "💎 STATUS",      val: 0,   type: 'status', color: '#ec4899', weight: 8,  img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
+    { id: 'five',   name: "🔥 5$ (JACKPOT)",val: 5,   type: 'money',  color: '#eab308', weight: 2,  img: "https://cdn-icons-png.flaticon.com/512/744/744922.png" },
 ];
 
-const CARD_WIDTH = 148; 
+const CARD_WIDTH = 148;
 
-// === ГЛАВНЫЙ ЭКРАН ===
 function App() {
+    // Защита от undefined: balance по умолчанию 0
     const [user, setUser] = useState({ id: 0, username: 'Loading...', balance: 0 });
-    const [page, setPage] = useState('menu'); // menu, rocket, dice
+    const [page, setPage] = useState('menu');
 
-    // Инициализация (берем ID из телеги и тянем баланс с сервера)
     useEffect(() => {
         const tg = window.Telegram?.WebApp;
         tg?.ready();
         tg?.expand();
         
-        // Тестовый ID если не в телеге
         const uid = tg?.initDataUnsafe?.user?.id || 7086207854; 
 
-        axios.get(`${API_URL}/init/${uid}`)
-            .then(res => setUser({ id: uid, ...res.data }))
-            .catch(() => setUser({ id: uid, username: 'Error', balance: 0 }));
+        // Используем наш настроенный api
+        api.get(`/init/${uid}`)
+            .then(res => {
+                // Проверяем, что пришли данные, а не ошибка
+                if(res.data && typeof res.data.balance === 'number') {
+                    setUser({ id: uid, ...res.data });
+                } else {
+                    console.error("Bad response:", res.data);
+                }
+            })
+            .catch(err => {
+                console.error("Init error:", err);
+                setUser({ id: uid, username: 'Error', balance: 0 });
+            });
     }, []);
 
     const updateBalance = (newBal) => setUser(prev => ({...prev, balance: newBal}));
 
     return (
         <div className="app-container">
-            {/* ШАПКА */}
             <div className="header">
                 <div className="user-block">
                     <div className="avatar">🦈</div>
@@ -68,7 +83,8 @@ function App() {
                 </div>
                 <div className="balance-block">
                     <div className="balance-label">БАЛАНС</div>
-                    <div className="balance-val">${user.balance.toFixed(2)}</div>
+                    {/* Исправлена ошибка toFixed: добавлена проверка (user.balance || 0) */}
+                    <div className="balance-val">${(user.balance || 0).toFixed(2)}</div>
                 </div>
             </div>
 
@@ -98,7 +114,6 @@ const Menu = ({ setPage }) => (
     </div>
 );
 
-// === ИГРА: КУБИК ===
 const DiceGame = ({ user, setPage, onUpdate }) => {
     const [bet, setBet] = useState(1);
     const [num, setNum] = useState(null);
@@ -115,21 +130,18 @@ const DiceGame = ({ user, setPage, onUpdate }) => {
         setWin(0);
 
         try {
-            // Запрос к серверу
-            const res = await axios.post(`${API_URL}/play`, {
+            const res = await api.post(`/play`, {
                 user_id: user.id, game: 'dice', bet: bet, selected_num: num
             });
             
-            // Сервер уже списал и посчитал. Показываем анимацию.
             const serverResult = res.data.dice_result;
             const newBal = res.data.new_balance;
             const winAmt = res.data.win_amount;
 
-            // Анимация 1.5 сек
             setTimeout(() => {
                 setResult(serverResult);
                 setRolling(false);
-                onUpdate(newBal); // Обновляем баланс в шапке
+                onUpdate(newBal);
 
                 if (winAmt > 0) {
                     setWin(winAmt);
@@ -179,7 +191,6 @@ const DiceGame = ({ user, setPage, onUpdate }) => {
     );
 };
 
-// === ИГРА: РАКЕТКА ===
 const RocketGame = ({ user, setPage, onUpdate }) => {
     const [spinning, setSpinning] = useState(false);
     const [cards, setCards] = useState([]);
@@ -188,7 +199,6 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
     const [winItem, setWinItem] = useState(null);
     const [fast, setFast] = useState(false);
 
-    // Генерация случайной ленты (визуал)
     const genStrip = () => {
         let arr = [];
         for(let i=0; i<80; i++) arr.push({...CASE_ITEMS[Math.floor(Math.random()*CASE_ITEMS.length)], uid: Math.random()});
@@ -203,26 +213,20 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
         setAnimTime(0);
         setOffset(0);
 
-        // Даем время на ресет CSS
         setTimeout(async () => {
             try {
                 setSpinning(true);
                 playSfx('start');
                 
-                // ЗАПРОС К СЕРВЕРУ (Списываем 5$, получаем ID победителя)
-                const res = await axios.post(`${API_URL}/play`, { user_id: user.id, game: 'rocket' });
+                const res = await api.post(`/play`, { user_id: user.id, game: 'rocket' });
                 const winnerId = res.data.winner_id;
                 const newBal = res.data.new_balance;
 
-                // Находим объект приза
                 const winner = CASE_ITEMS.find(i => i.id === winnerId);
-
-                // Подставляем победителя в ленту (на 60 позицию)
                 const newCards = genStrip();
                 newCards[60] = winner;
                 setCards(newCards);
 
-                // Расчет позиции
                 const winPos = 60;
                 const containerW = window.innerWidth > 600 ? 600 : window.innerWidth - 32;
                 const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
