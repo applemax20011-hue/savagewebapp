@@ -5,7 +5,6 @@ import axios from 'axios';
 // !!! ССЫЛКА С NGROK !!!
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
 
-// Настройки Axios (чтобы Ngrok не ругался)
 const api = axios.create({
     baseURL: API_URL,
     headers: {
@@ -14,7 +13,7 @@ const api = axios.create({
     }
 });
 
-// --- ЗВУКИ ---
+// ЗВУКИ
 const AUDIO = {
     click: new Audio('https://cdn.freesound.org/previews/613/613867_11632007-lq.mp3'),
     spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'),
@@ -24,12 +23,7 @@ const AUDIO = {
 };
 Object.values(AUDIO).forEach(a => { a.volume = 0.4; a.load(); });
 
-const playSfx = (name) => {
-    try {
-        AUDIO[name].currentTime = 0;
-        AUDIO[name].play().catch(() => {});
-    } catch(e) {}
-};
+const playSfx = (name) => { try { AUDIO[name].currentTime = 0; AUDIO[name].play().catch(()=>{}); } catch(e) {} };
 
 const CASE_ITEMS = [
     { id: 'empty',  name: "💀 ПУСТО",       val: 0,   type: 'empty',  color: '#3f3f46', weight: 45, img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
@@ -42,61 +36,45 @@ const CASE_ITEMS = [
 const CARD_WIDTH = 148;
 
 function App() {
-    // Начальное состояние пользователя
-    const [user, setUser] = useState({ 
-        id: 0, 
-        username: 'Загрузка...', 
-        balance: 0,
-        photo_url: null 
-    });
+    const [user, setUser] = useState({ id: 0, username: 'Загрузка...', balance: 0 });
     const [page, setPage] = useState('menu');
 
     useEffect(() => {
-        // 1. Инициализация Телеграм WebApp
+        // Инициализация
         const tg = window.Telegram?.WebApp;
-        tg?.ready();
-        tg?.expand(); // На весь экран
         
-        // 2. Достаем данные юзера из Телеграма
-        const tgUser = tg?.initDataUnsafe?.user;
-
-        let currentId = 0;
-        let currentName = 'Guest';
-        let currentPhoto = null;
-
-        if (tgUser) {
-            // Если открыли через Телеграм - берем реальные данные
-            currentId = tgUser.id;
-            currentName = tgUser.username || tgUser.first_name;
-            currentPhoto = tgUser.photo_url; // Аватарка из телеги
-        } else {
-            // Если открыли с компа для теста (без телеги) - ставим твой ID
-            currentId = 5839201122; // <-- Твой ID для тестов в браузере
-            currentName = 'Admin Test';
+        if (tg) {
+            tg.ready();
+            tg.expand();
+            
+            const tgUser = tg.initDataUnsafe?.user;
+            
+            if (tgUser) {
+                // ДАННЫЕ НАЙДЕНЫ (Открыто в ТГ)
+                // Запрашиваем баланс по реальному ID
+                api.get(`/init/${tgUser.id}`)
+                    .then(res => {
+                        setUser({ 
+                            id: tgUser.id, 
+                            username: tgUser.username || tgUser.first_name, 
+                            balance: res.data.balance || 0,
+                            photo_url: tgUser.photo_url
+                        });
+                    })
+                    .catch(err => {
+                        // Ошибка API
+                        setUser(prev => ({ ...prev, id: tgUser.id, username: tgUser.username, balance: 0 }));
+                        // tg.showAlert(`Ошибка API: ${err.message}`);
+                    });
+            } else {
+                // ОТКРЫТО НЕ В ТГ (или данные не пришли)
+                // Для теста ставим твой ID вручную
+                const myRealID = 5839201122; // <-- ТВОЙ АЙДИ (поменяй если другой)
+                api.get(`/init/${myRealID}`).then(res => {
+                    setUser({ id: myRealID, username: "Тест Браузер", balance: res.data.balance || 0 });
+                });
+            }
         }
-
-        // Ставим то, что узнали из Телеграма (пока без баланса)
-        setUser(prev => ({ 
-            ...prev, 
-            id: currentId, 
-            username: currentName, 
-            photo_url: currentPhoto 
-        }));
-
-        // 3. Запрашиваем БАЛАНС из твоей базы данных
-        api.get(`/init/${currentId}`)
-            .then(res => {
-                if(res.data && typeof res.data.balance === 'number') {
-                    setUser(prev => ({ 
-                        ...prev, 
-                        balance: res.data.balance 
-                    }));
-                }
-            })
-            .catch(err => {
-                console.error("Ошибка получения баланса:", err);
-            });
-
     }, []);
 
     const updateBalance = (newBal) => setUser(prev => ({...prev, balance: newBal}));
@@ -105,12 +83,7 @@ function App() {
         <div className="app-container">
             <div className="header">
                 <div className="user-block">
-                    {/* Если есть фото из телеги - показываем его, иначе акулу */}
-                    {user.photo_url ? (
-                        <img src={user.photo_url} className="avatar-img" alt="ava" />
-                    ) : (
-                        <div className="avatar">🦈</div>
-                    )}
+                    {user.photo_url ? <img src={user.photo_url} className="avatar-img"/> : <div className="avatar">🦈</div>}
                     <div>
                         <div className="nickname">@{user.username}</div>
                         <div className="uid">ID: {user.id}</div>
@@ -118,7 +91,6 @@ function App() {
                 </div>
                 <div className="balance-block">
                     <div className="balance-label">БАЛАНС</div>
-                    {/* Защита от ошибок toFixed */}
                     <div className="balance-val">${(user.balance || 0).toFixed(2)}</div>
                 </div>
             </div>
@@ -130,23 +102,16 @@ function App() {
     );
 }
 
-// --- КОМПОНЕНТЫ ИГР (ОСТАЮТСЯ ТЕ ЖЕ, НО Я ИХ СЮДА ВКЛЮЧИЛ ДЛЯ ПОЛНОТЫ) ---
-
+// === КОМПОНЕНТЫ ИГР ===
 const Menu = ({ setPage }) => (
     <div className="menu-grid animate-in">
         <div className="game-card rocket" onClick={() => { playSfx('click'); setPage('rocket'); }}>
             <div className="game-icon">🚀</div>
-            <div className="game-info">
-                <h3>Rocket Case</h3>
-                <p>Выбей статус или $</p>
-            </div>
+            <div className="game-info"><h3>Rocket Case</h3><p>Кейс удачи</p></div>
         </div>
         <div className="game-card dice" onClick={() => { playSfx('click'); setPage('dice'); }}>
             <div className="game-icon">🎲</div>
-            <div className="game-info">
-                <h3>Dice x5</h3>
-                <p>Угадай число</p>
-            </div>
+            <div className="game-info"><h3>Dice x5</h3><p>Угадай число</p></div>
         </div>
     </div>
 );
@@ -167,28 +132,19 @@ const DiceGame = ({ user, setPage, onUpdate }) => {
         setWin(0);
 
         try {
-            const res = await api.post(`/play`, {
-                user_id: user.id, game: 'dice', bet: bet, selected_num: num
-            });
-            
-            const serverResult = res.data.dice_result;
-            const newBal = res.data.new_balance;
-            const winAmt = res.data.win_amount;
+            const res = await api.post(`/play`, { user_id: user.id, game: 'dice', bet: bet, selected_num: num });
+            const { dice_result, new_balance, win_amount } = res.data;
 
             setTimeout(() => {
-                setResult(serverResult);
+                setResult(dice_result);
                 setRolling(false);
-                onUpdate(newBal);
-
-                if (winAmt > 0) {
-                    setWin(winAmt);
+                onUpdate(new_balance);
+                if (win_amount > 0) {
+                    setWin(win_amount);
                     playSfx('win');
                     confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-                } else {
-                    playSfx('lose');
-                }
+                } else playSfx('lose');
             }, 1500);
-
         } catch (e) {
             setRolling(false);
             window.Telegram?.WebApp?.showAlert("Ошибка или мало денег!");
@@ -199,15 +155,12 @@ const DiceGame = ({ user, setPage, onUpdate }) => {
         <div className="game-container animate-in">
             <button className="back-btn" onClick={() => setPage('menu')}>‹ МЕНЮ</button>
             <h2 className="game-title glitch" data-text="DICE x5">DICE x5</h2>
-
             <div className="dice-scene">
                 <div className={`cube ${rolling ? 'rolling' : ''} show-${result}`}>
                     {[1,2,3,4,5,6].map(n => <div key={n} className={`cube__face cube__face--${n}`}>{n}</div>)}
                 </div>
             </div>
-
             {win > 0 && <div className="status-msg win">ВЫИГРЫШ: +{win}$</div>}
-
             <div className="dice-selector">
                 <div className="numbers-grid">
                     {[1,2,3,4,5,6].map(n => (
@@ -215,15 +168,11 @@ const DiceGame = ({ user, setPage, onUpdate }) => {
                     ))}
                 </div>
             </div>
-
             <div className="bet-controls">
                 <div className="bet-label">СТАВКА: <span className="val">${bet}</span></div>
                 <input type="range" min="1" max="50" value={bet} onChange={e => setBet(Number(e.target.value))} className="slider" disabled={rolling} />
             </div>
-
-            <button className="action-btn" onClick={play} disabled={rolling || !num}>
-                {rolling ? "БРОСАЮ..." : num ? `СТАВКА ${bet}$ НА [${num}]` : "ВЫБЕРИ ЧИСЛО"}
-            </button>
+            <button className="action-btn" onClick={play} disabled={rolling || !num}>{rolling ? "БРОСАЮ..." : num ? `СТАВКА ${bet}$ НА [${num}]` : "ВЫБЕРИ ЧИСЛО"}</button>
         </div>
     );
 };
@@ -245,29 +194,22 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
 
     const play = async () => {
         if(spinning) return;
-        
-        setWinItem(null);
-        setAnimTime(0);
-        setOffset(0);
+        setWinItem(null); setAnimTime(0); setOffset(0);
 
         setTimeout(async () => {
             try {
                 setSpinning(true);
                 playSfx('start');
-                
                 const res = await api.post(`/play`, { user_id: user.id, game: 'rocket' });
-                const winnerId = res.data.winner_id;
-                const newBal = res.data.new_balance;
-
-                const winner = CASE_ITEMS.find(i => i.id === winnerId);
+                const { winner_id, new_balance } = res.data;
+                const winner = CASE_ITEMS.find(i => i.id === winner_id);
                 const newCards = genStrip();
                 newCards[60] = winner;
                 setCards(newCards);
 
-                const winPos = 60;
                 const containerW = window.innerWidth > 600 ? 600 : window.innerWidth - 32;
                 const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
-                const finalScroll = (winPos * CARD_WIDTH) + (CARD_WIDTH / 2) - (containerW / 2) + shift;
+                const finalScroll = (60 * CARD_WIDTH) + (CARD_WIDTH / 2) - (containerW / 2) + shift;
 
                 const duration = fast ? 0.5 : 5;
                 setAnimTime(duration);
@@ -278,16 +220,12 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
                 setTimeout(() => {
                     setSpinning(false);
                     setWinItem(winner);
-                    onUpdate(newBal);
-                    
+                    onUpdate(new_balance);
                     if(winner.val > 0 || winner.id === 'status') {
                         playSfx('win');
                         confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-                    } else {
-                        playSfx('lose');
-                    }
+                    } else playSfx('lose');
                 }, duration * 1000);
-
             } catch (e) {
                 setSpinning(false);
                 window.Telegram?.WebApp?.showAlert("Ошибка или мало денег!");
@@ -299,13 +237,9 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
         <div className="game-container animate-in">
             <button className="back-btn" onClick={() => setPage('menu')} disabled={spinning}>‹ МЕНЮ</button>
             <h2 className="game-title glitch" data-text="ROCKET">ROCKET</h2>
-
             <div className="case-window">
                 <div className="pointer-line"></div>
-                <div className="track" style={{ 
-                    transform: `translateX(${offset}px)`,
-                    transition: `transform ${animTime}s cubic-bezier(0.1, 0, 0.2, 1)`
-                }}>
+                <div className="track" style={{ transform: `translateX(${offset}px)`, transition: `transform ${animTime}s cubic-bezier(0.1, 0, 0.2, 1)` }}>
                     {cards.map((item, i) => (
                         <div key={i} className="item-card" style={{'--item-color': item.color}}>
                             <img src={item.img} className="item-img" />
@@ -314,18 +248,14 @@ const RocketGame = ({ user, setPage, onUpdate }) => {
                     ))}
                 </div>
             </div>
-
             <div className="controls">
                 <label className="fast-switch">
                     <input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)} disabled={spinning} />
                     <span className="slider"></span>
                     <span className="label-text">⚡ БЫСТРО</span>
                 </label>
-                <button onClick={play} disabled={spinning} className="action-btn">
-                    {spinning ? "КРУТИМ..." : "ОТКРЫТЬ (5$)"}
-                </button>
+                <button onClick={play} disabled={spinning} className="action-btn">{spinning ? "КРУТИМ..." : "ОТКРЫТЬ (5$)"}</button>
             </div>
-
             {winItem && (
                 <div className="win-modal-overlay" onClick={() => setWinItem(null)}>
                     <div className="win-card animate-pop-up" onClick={e => e.stopPropagation()}>
