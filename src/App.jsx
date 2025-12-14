@@ -2,14 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
 
-// !!! ВСТАВЬ СЮДА ССЫЛКУ С NGROK (С ДЕДИКА) !!!
+// !!! ССЫЛКА С NGROK !!!
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
 
-// Настройки Axios для обхода защиты Ngrok
+// Настройки Axios (чтобы Ngrok не ругался)
 const api = axios.create({
     baseURL: API_URL,
     headers: {
-        "ngrok-skip-browser-warning": "true", // <--- ВОТ ЭТО ИСПРАВЛЯЕТ ОШИБКУ
+        "ngrok-skip-browser-warning": "true",
         "Content-Type": "application/json"
     }
 });
@@ -42,31 +42,61 @@ const CASE_ITEMS = [
 const CARD_WIDTH = 148;
 
 function App() {
-    // Защита от undefined: balance по умолчанию 0
-    const [user, setUser] = useState({ id: 0, username: 'Loading...', balance: 0 });
+    // Начальное состояние пользователя
+    const [user, setUser] = useState({ 
+        id: 0, 
+        username: 'Загрузка...', 
+        balance: 0,
+        photo_url: null 
+    });
     const [page, setPage] = useState('menu');
 
     useEffect(() => {
+        // 1. Инициализация Телеграм WebApp
         const tg = window.Telegram?.WebApp;
         tg?.ready();
-        tg?.expand();
+        tg?.expand(); // На весь экран
         
-        const uid = tg?.initDataUnsafe?.user?.id || 7086207854; 
+        // 2. Достаем данные юзера из Телеграма
+        const tgUser = tg?.initDataUnsafe?.user;
 
-        // Используем наш настроенный api
-        api.get(`/init/${uid}`)
+        let currentId = 0;
+        let currentName = 'Guest';
+        let currentPhoto = null;
+
+        if (tgUser) {
+            // Если открыли через Телеграм - берем реальные данные
+            currentId = tgUser.id;
+            currentName = tgUser.username || tgUser.first_name;
+            currentPhoto = tgUser.photo_url; // Аватарка из телеги
+        } else {
+            // Если открыли с компа для теста (без телеги) - ставим твой ID
+            currentId = 5839201122; // <-- Твой ID для тестов в браузере
+            currentName = 'Admin Test';
+        }
+
+        // Ставим то, что узнали из Телеграма (пока без баланса)
+        setUser(prev => ({ 
+            ...prev, 
+            id: currentId, 
+            username: currentName, 
+            photo_url: currentPhoto 
+        }));
+
+        // 3. Запрашиваем БАЛАНС из твоей базы данных
+        api.get(`/init/${currentId}`)
             .then(res => {
-                // Проверяем, что пришли данные, а не ошибка
                 if(res.data && typeof res.data.balance === 'number') {
-                    setUser({ id: uid, ...res.data });
-                } else {
-                    console.error("Bad response:", res.data);
+                    setUser(prev => ({ 
+                        ...prev, 
+                        balance: res.data.balance 
+                    }));
                 }
             })
             .catch(err => {
-                console.error("Init error:", err);
-                setUser({ id: uid, username: 'Error', balance: 0 });
+                console.error("Ошибка получения баланса:", err);
             });
+
     }, []);
 
     const updateBalance = (newBal) => setUser(prev => ({...prev, balance: newBal}));
@@ -75,7 +105,12 @@ function App() {
         <div className="app-container">
             <div className="header">
                 <div className="user-block">
-                    <div className="avatar">🦈</div>
+                    {/* Если есть фото из телеги - показываем его, иначе акулу */}
+                    {user.photo_url ? (
+                        <img src={user.photo_url} className="avatar-img" alt="ava" />
+                    ) : (
+                        <div className="avatar">🦈</div>
+                    )}
                     <div>
                         <div className="nickname">@{user.username}</div>
                         <div className="uid">ID: {user.id}</div>
@@ -83,7 +118,7 @@ function App() {
                 </div>
                 <div className="balance-block">
                     <div className="balance-label">БАЛАНС</div>
-                    {/* Исправлена ошибка toFixed: добавлена проверка (user.balance || 0) */}
+                    {/* Защита от ошибок toFixed */}
                     <div className="balance-val">${(user.balance || 0).toFixed(2)}</div>
                 </div>
             </div>
@@ -94,6 +129,8 @@ function App() {
         </div>
     );
 }
+
+// --- КОМПОНЕНТЫ ИГР (ОСТАЮТСЯ ТЕ ЖЕ, НО Я ИХ СЮДА ВКЛЮЧИЛ ДЛЯ ПОЛНОТЫ) ---
 
 const Menu = ({ setPage }) => (
     <div className="menu-grid animate-in">
