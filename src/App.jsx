@@ -1,17 +1,14 @@
 import { useState, useEffect } from 'react';
 import './index.css';
 
-// 👇👇👇 ВСТАВЬ СЮДА СВОЙ HTTPS URL ОТ NGROK 👇👇👇
-const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev"; 
+const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";  
 
-// --- 1. ПРОФИЛЬ (С кассой и фото) ---
+// --- 1. ПРОФИЛЬ ---
 const Profile = ({ user, tgUser }) => {
-  // Аватарка: либо из телеграма, либо заглушка
   const avatarUrl = tgUser?.photo_url 
     ? tgUser.photo_url 
     : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-  // Имя: если есть Fake Tag - показываем его, иначе username
   const displayName = user?.fake_tag ? user.fake_tag : (user?.username || "Guest");
   const isFake = !!user?.fake_tag;
 
@@ -67,7 +64,7 @@ const Profile = ({ user, tgUser }) => {
 const RocketGame = ({ user, refreshData }) => {
   const [flying, setFlying] = useState(false);
   const [multiplier, setMultiplier] = useState(1.00);
-  const [status, setStatus] = useState("idle"); // idle, fly, crash, win
+  const [status, setStatus] = useState("idle"); 
 
   const startGame = async () => {
     if ((user?.spins || 0) <= 0) {
@@ -78,7 +75,6 @@ const RocketGame = ({ user, refreshData }) => {
     setStatus("fly");
     setMultiplier(1.00);
 
-    // Анимация набора высоты (визуальная)
     const timer = setInterval(() => {
         setMultiplier(prev => prev + 0.03);
     }, 50);
@@ -86,15 +82,25 @@ const RocketGame = ({ user, refreshData }) => {
     try {
       const res = await fetch(`${API_URL}/api/rocket/spin`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true' // <--- ВАЖНЫЙ ФИКС
+        },
         body: JSON.stringify({ user_id: user.id })
       });
-      const data = await res.json();
+      
+      const text = await res.text(); // Читаем как текст, чтобы поймать ошибку
+      let data;
+      try {
+          data = JSON.parse(text);
+      } catch(e) {
+          throw new Error("Server returned HTML instead of JSON. Check URL.");
+      }
       
       clearInterval(timer);
 
       if (data.success) {
-        setMultiplier(data.multiplier); // Ставим выигрышный X
+        setMultiplier(data.multiplier);
         setStatus("win");
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       } else {
@@ -102,7 +108,7 @@ const RocketGame = ({ user, refreshData }) => {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
       }
       
-      refreshData(); // Обновляем баланс и спины
+      refreshData();
       setFlying(false);
 
     } catch (e) {
@@ -110,6 +116,7 @@ const RocketGame = ({ user, refreshData }) => {
       setFlying(false);
       setStatus("idle");
       console.error(e);
+      window.Telegram.WebApp.showAlert("Ошибка соединения с сервером!");
     }
   };
 
@@ -146,7 +153,9 @@ const Mentors = () => {
   const [list, setList] = useState([]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/mentors`)
+    fetch(`${API_URL}/api/mentors`, {
+        headers: { 'ngrok-skip-browser-warning': 'true' } // <--- ВАЖНЫЙ ФИКС
+    })
       .then(r => r.json())
       .then(d => setList(d))
       .catch(e => console.log(e));
@@ -168,14 +177,6 @@ const Mentors = () => {
                 <span style={{color:'var(--primary)'}}>{m.fee_percent}%</span>
             </div>
             <p style={{fontSize:'12px', color:'#aaa'}}>{m.info}</p>
-            <div style={{marginTop:'10px'}}>
-               {m.directions.split(',').map(d => (
-                 <span key={d} style={{
-                    fontSize:'10px', background:'rgba(255,255,255,0.1)', 
-                    padding:'4px 8px', borderRadius:'5px', marginRight:'5px'
-                 }}>{d}</span>
-               ))}
-            </div>
           </div>
         </div>
       ))}
@@ -188,7 +189,9 @@ const TopLeaders = () => {
     const [top, setTop] = useState([]);
   
     useEffect(() => {
-      fetch(`${API_URL}/api/top`).then(r => r.json()).then(setTop).catch(console.error);
+      fetch(`${API_URL}/api/top`, {
+          headers: { 'ngrok-skip-browser-warning': 'true' } // <--- ВАЖНЫЙ ФИКС
+      }).then(r => r.json()).then(setTop).catch(console.error);
     }, []);
   
     return (
@@ -219,35 +222,40 @@ function App() {
   const [tgUser, setTgUser] = useState(null);
 
   const fetchUserData = (uid) => {
-     fetch(`${API_URL}/api/user/${uid}`)
-       .then(r => r.json())
-       .then(data => {
-           if (!data.error) setUser(data);
+     fetch(`${API_URL}/api/user/${uid}`, {
+         headers: { 'ngrok-skip-browser-warning': 'true' } // <--- ВАЖНЫЙ ФИКС
+     })
+       .then(r => r.text()) // Сначала берем как текст, чтобы проверить на HTML
+       .then(text => {
+           try {
+               const data = JSON.parse(text);
+               if (!data.error) setUser(data);
+           } catch(e) {
+               console.error("API Error: Пришел HTML вместо JSON. Проверь API_URL!", text.substring(0, 100));
+           }
        })
-       .catch(err => console.error("API Error:", err));
+       .catch(err => console.error("Net Error:", err));
   };
 
   useEffect(() => {
-    // Инициализация Telegram
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
     
-    // Берем данные из телеграма
+    // Пытаемся покрасить хедер (работает только в новых версиях ТГ, ошибку в консоли игнорируй)
+    try {
+        tg.setHeaderColor('#050505');
+        tg.setBackgroundColor('#050505');
+    } catch (e) {}
+    
     const tUser = tg.initDataUnsafe?.user;
     setTgUser(tUser);
 
-    // ID для запроса к БД (фоллбек для браузера - твой ID)
+    // Если открыли в браузере — подставим твой ID
     const queryId = tUser?.id || 6960794064;
-    
     fetchUserData(queryId);
-
-    // Настраиваем цвета приложения под тему
-    tg.setHeaderColor('#050505');
-    tg.setBackgroundColor('#050505');
   }, []);
 
-  // Функция обновления данных (после игры)
   const refresh = () => {
       const uid = tgUser?.id || 6960794064;
       fetchUserData(uid);
