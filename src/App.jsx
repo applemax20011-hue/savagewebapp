@@ -1,18 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react';
 import './index.css';
 
-// URL ТВОЕГО БЭКЕНДА (Ngrok)
-const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev"; 
+// ⚠️ ПРОВЕРЬ, ЧТОБЫ ТУТ БЫЛА ТВОЯ АКТУАЛЬНАЯ ССЫЛКА NGROK
+const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev/api";
 
-// КАРТИНКИ (Заглушки, можно заменить на реальные URL)
+// КАРТИНКИ
 const IMGS = {
-  skull: "https://cdn-icons-png.flaticon.com/512/1701/1701833.png", // Пусто
-  money: "https://cdn-icons-png.flaticon.com/512/2474/2474450.png", // Деньги
-  star: "https://cdn-icons-png.flaticon.com/512/1828/1828884.png", // Статус
-  logo: "https://cdn-icons-png.flaticon.com/512/5968/5968292.png" // Лого (заглушка)
+  skull: "https://cdn-icons-png.flaticon.com/512/1701/1701833.png",
+  money: "https://cdn-icons-png.flaticon.com/512/2474/2474450.png",
+  star: "https://cdn-icons-png.flaticon.com/512/1828/1828884.png"
 };
 
-// СПИСОК СЕРВИСОВ (статичный, как в боте)
 const SERVICES = [
   { t: "📊 Обмен OKX", u: "https://t.me/OKXCrypto_Robot" },
   { t: "🌐 Web Trade", u: "https://t.me/ForbexTradeBot" },
@@ -27,102 +25,131 @@ function App() {
   const [data, setData] = useState(null);
   const [stats, setStats] = useState(null);
   const [mentor, setMentor] = useState(null);
-  const [loading, setLoading] = useState(true);
   
-  // -- GAME STATE --
+  // Добавили состояние ошибки
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+  
   const [spinning, setSpinning] = useState(false);
-  const [winData, setWinData] = useState(null); // {type: 'money'|'status'|'empty', val: ...}
+  const [winData, setWinData] = useState(null);
   const [fastSpin, setFastSpin] = useState(false);
   const trackRef = useRef(null);
   
-  // -- TG INIT --
   const tg = window.Telegram?.WebApp;
-  const userId = tg?.initDataUnsafe?.user?.id || 6960794064; // Тест ID
+  const userId = tg?.initDataUnsafe?.user?.id || 6960794064; 
   const photoUrl = tg?.initDataUnsafe?.user?.photo_url;
+
+  // --- ХЕЛПЕР ДЛЯ ФЕТЧА (Чтобы везде добавлять заголовок) ---
+  const savageFetch = (url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        // 🔥 ВОТ ЭТОТ ЗАГОЛОВОК РЕШАЕТ ПРОБЛЕМУ NGROK:
+        "ngrok-skip-browser-warning": "true", 
+        "Content-Type": "application/json"
+      }
+    }).then(async r => {
+      if (!r.ok) {
+         const text = await r.text();
+         throw new Error(`Server Error: ${r.status} ${text}`);
+      }
+      return r.json();
+    });
+  };
 
   useEffect(() => {
     tg?.expand();
-    fetch(`${API_URL}/init/${userId}`)
-      .then(r => r.json())
+    
+    // Загрузка профиля
+    savageFetch(`${API_URL}/init/${userId}`)
       .then(d => {
-        if(d.error) return alert("Ошибка доступа");
-        setData(d);
+        if(d.error) {
+           setErrorMsg(d.error);
+        } else {
+           setData(d);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        setErrorMsg("Ошибка связи: " + err.message);
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, []);
 
-  // Ленивая загрузка вкладок
   const switchTab = (t) => {
     setTab(t);
     if(t === 'tops' && !stats) {
-      fetch(`${API_URL}/stats`).then(r=>r.json()).then(setStats);
+      savageFetch(`${API_URL}/stats`).then(setStats).catch(alert);
     }
-    if(t === 'mentor' && !mentor && data.is_mentor) {
-      fetch(`${API_URL}/mentor/${userId}`).then(r=>r.json()).then(setMentor);
+    if(t === 'mentor' && !mentor && data?.is_mentor) {
+      savageFetch(`${API_URL}/mentor/${userId}`).then(setMentor).catch(alert);
     }
   };
 
-  // --- ЛОГИКА ИГРЫ ---
   const handleSpin = () => {
     if(data.user.spins < 1) return tg.showAlert("Нет спинов!");
     setSpinning(true);
     
-    fetch(`${API_URL}/play`, {
+    savageFetch(`${API_URL}/play`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({user_id: userId})
     })
-    .then(r => r.json())
     .then(res => {
         if(res.error) { setSpinning(false); return alert(res.error); }
         
-        // Обновляем спины
         setData(prev => ({...prev, user: {...prev.user, spins: res.spins}}));
 
-        // Анимация
         const track = trackRef.current;
         if(!track) return;
         
-        // Сброс позиции
         track.style.transition = 'none';
         track.style.transform = 'translateX(0)';
         
-        // Определяем картинку выигрыша
-        // 0-Empty, 1-Money, 2-Star. Генерируем ленту так, чтобы нужная иконка оказалась по центру
-        // Для простоты: просто крутим долго и останавливаемся рандомно, а результат показываем попапом
-        // НО, чтобы было красиво, можно сделать так:
-        // (Упрощенная рулетка: просто CSS анимация "blur" и показ результата)
-        
         setTimeout(() => {
             track.style.transition = fastSpin ? 'transform 1s cubic-bezier(0.1,0.9,0.2,1)' : 'transform 4s cubic-bezier(0.1,0.9,0.2,1)';
-            // Сдвигаем на рандомное большое расстояние
             const randomOffset = 2000 + Math.random() * 500;
             track.style.transform = `translateX(-${randomOffset}px)`;
         }, 50);
 
         setTimeout(() => {
             setSpinning(false);
-            if(res.win) {
-                setWinData(res);
-            } else {
-               // Пусто
-            }
+            if(res.win) setWinData(res);
         }, fastSpin ? 1100 : 4100);
+    })
+    .catch(err => {
+        setSpinning(false);
+        alert("Ошибка спина: " + err.message);
     });
   };
 
   const sendStatus = (e) => {
     e.preventDefault();
     const text = e.target.elements.stText.value;
-    fetch(`${API_URL}/status`, {
+    savageFetch(`${API_URL}/status`, {
         method:'POST', body:JSON.stringify({user_id:userId, text})
     }).then(() => {
         setWinData(null);
         tg.showAlert("Заявка отправлена админам!");
-    });
+    }).catch(alert);
   };
 
-  if(loading) return <div className="loader">SAVAGE<br/>LOADING</div>;
+  if(loading) return <div className="loader">SAVAGE<br/>LOADING...</div>;
+  
+  if(errorMsg) return (
+      <div className="loader" style={{flexDirection:'column', padding:20, textAlign:'center'}}>
+          <div style={{color:'red', marginBottom:10}}>CRITICAL ERROR</div>
+          <div style={{fontSize:14, fontFamily:'monospace', color:'#fff'}}>{errorMsg}</div>
+          <div style={{marginTop:20, fontSize:12, color:'#888'}}>
+              Проверь: <br/>
+              1. Запущен ли uvicorn?<br/>
+              2. Верна ли ссылка ngrok?<br/>
+              3. Есть ли /api в конце ссылки?
+          </div>
+      </div>
+  );
 
   return (
     <div className="app-container slide-in">
@@ -236,9 +263,7 @@ function App() {
               <div className="marker-top"></div>
               <div className="marker-bottom"></div>
               <div className="track" ref={trackRef} style={{width: '2000px'}}> 
-                 {/* Генерируем много карточек для иллюзии бесконечности */}
                  {[...Array(30)].map((_, i) => {
-                    // Чередуем иконки
                     let icon = IMGS.skull;
                     if(i % 5 === 0) icon = IMGS.money;
                     if(i % 12 === 0) icon = IMGS.star;
