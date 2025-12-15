@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
 
-// !!! ВСТАВЬ ССЫЛКУ NGROK !!!
+// !!! ВСТАВЬ СВОЮ ССЫЛКУ NGROK !!!
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
 
 const api = axios.create({
@@ -10,7 +10,6 @@ const api = axios.create({
     headers: { "ngrok-skip-browser-warning": "true", "Content-Type": "application/json" }
 });
 
-// ЗВУКИ
 const AUDIO = {
     spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'),
     win: new Audio('https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3'),
@@ -20,21 +19,18 @@ const AUDIO = {
 Object.values(AUDIO).forEach(a => { a.volume = 0.4; a.load(); });
 const playSfx = (name) => { try { AUDIO[name].currentTime = 0; AUDIO[name].play().catch(()=>{}); } catch(e){} };
 
-// ПРЕДМЕТЫ
+// ПРИЗЫ (ДОЛЖНЫ СОВПАДАТЬ С API.PY)
 const ITEMS = [
-    { id: 'empty',  name: "💀 ПУСТО",       color: '#3f3f46', img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
-    { id: 'check',  name: "💵 ЧЕК 0.5$",    color: '#3b82f6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'one',    name: "🍌 1$",          color: '#8b5cf6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
-    { id: 'status', name: "💎 STATUS",      color: '#ec4899', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
-    { id: 'five',   name: "🔥 5$ (JACKPOT)",color: '#eab308', img: "https://cdn-icons-png.flaticon.com/512/744/744922.png" },
+    { id: 'empty',  name: "💀 ПУСТО",       type: 'empty',  color: '#3f3f46', img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
+    { id: 'respect',name: "✊ РЕСПЕКТ",     type: 'respect',color: '#22c55e', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" }, 
+    { id: 'check',  name: "💵 ЧЕК 0.5$",    type: 'money',  color: '#3b82f6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
+    { id: 'status', name: "💎 СТАТУС",      type: 'status', color: '#ec4899', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
 ];
 const CARD_WIDTH = 148;
 
-// === ЛОАДЕР (ЭКРАН ЗАГРУЗКИ) ===
 const Loader = () => (
     <div className="loader-container">
         <div className="shark-loader">🦈</div>
-        <div className="loader-spinner"></div>
         <div className="loader-text glitch" data-text="LOADING...">LOADING...</div>
     </div>
 );
@@ -42,8 +38,6 @@ const Loader = () => (
 function App() {
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState({ id: 0, username: '', spins: 0, photo_url: null });
-    
-    // Игра
     const [spinning, setSpinning] = useState(false);
     const [cards, setCards] = useState([]);
     const [offset, setOffset] = useState(0);
@@ -54,27 +48,21 @@ function App() {
     useEffect(() => {
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); tg.enableClosingConfirmation(); }
+        
+        // Получаем ID (или тестовый)
+        const uid = tg?.initDataUnsafe?.user?.id || 5839201122; 
 
-        const tgUser = tg?.initDataUnsafe?.user;
-        const uid = tgUser?.id || 5839201122; // Твой ID для теста
-
-        // Загрузка данных
         api.get(`/init/${uid}`)
             .then(res => {
                 setUser({
                     id: uid,
-                    username: tgUser?.username || res.data.username,
+                    username: tg?.initDataUnsafe?.user?.username || res.data.username,
                     spins: res.data.spins,
-                    photo_url: tgUser?.photo_url
+                    photo_url: tg?.initDataUnsafe?.user?.photo_url
                 });
-                // Имитация красивой загрузки (минимум 1 сек)
-                setTimeout(() => setLoading(false), 1000);
+                setTimeout(() => setLoading(false), 800);
             })
-            .catch(() => {
-                setUser({ id: uid, username: 'Error', spins: 0 });
-                setLoading(false);
-            });
-            
+            .catch(() => { setLoading(false); });
         setCards(genStrip());
     }, []);
 
@@ -85,17 +73,10 @@ function App() {
     }
 
     const spin = async () => {
-        if(spinning) return;
-        if(user.spins < 1) {
-            window.Telegram?.WebApp?.showAlert("Нет спинов! Заливай профиты.");
-            return;
-        }
+        if(spinning || user.spins < 1) return;
         
-        setWinItem(null);
-        setAnimTime(0);
-        setOffset(0);
+        setWinItem(null); setAnimTime(0); setOffset(0);
 
-        // Чтобы браузер успел сбросить CSS
         setTimeout(async () => {
             try {
                 setSpinning(true);
@@ -105,17 +86,21 @@ function App() {
                 // Визуально списываем
                 setUser(prev => ({...prev, spins: prev.spins - 1}));
 
+                // Запрос
                 const res = await api.post(`/play`, { user_id: user.id });
                 const { winner_id, spins_left } = res.data;
 
+                // Настраиваем рулетку
                 const winner = ITEMS.find(i => i.id === winner_id);
                 const newCards = genStrip();
                 newCards[60] = winner;
                 setCards(newCards);
 
-                const containerW = window.innerWidth > 600 ? 600 : window.innerWidth - 32;
+                // Считаем позицию
                 const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
-                const finalScroll = (60 * CARD_WIDTH) + (CARD_WIDTH / 2) - (containerW / 2) + shift;
+                // Центрирование с учетом ширины экрана
+                const screenW = window.innerWidth > 600 ? 600 : (window.innerWidth - 32);
+                const finalScroll = (60 * CARD_WIDTH) + (CARD_WIDTH / 2) - (screenW / 2) + shift;
 
                 const duration = fast ? 0.5 : 5.5;
                 setAnimTime(duration);
@@ -128,7 +113,7 @@ function App() {
                     setWinItem(winner);
                     setUser(prev => ({...prev, spins: spins_left}));
 
-                    if(winner.id !== 'empty') {
+                    if(winner.type !== 'empty') {
                         playSfx('win');
                         confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
                         window.Telegram?.WebApp?.HapticFeedback.notificationOccurred('success');
@@ -150,7 +135,6 @@ function App() {
 
     return (
         <div className="app-container animate-fade-in">
-            {/* ШАПКА */}
             <div className="header">
                 <div className="user-block">
                     {user.photo_url ? <img src={user.photo_url} className="avatar-img"/> : <div className="avatar">🦈</div>}
@@ -165,16 +149,11 @@ function App() {
                 </div>
             </div>
 
-            {/* ИГРА */}
             <div className="game-area">
                 <h2 className="game-title glitch" data-text="ROCKET">ROCKET</h2>
-
                 <div className="case-window">
                     <div className="pointer-line"></div>
-                    <div className="track" style={{ 
-                        transform: `translateX(${offset}px)`,
-                        transition: `transform ${animTime}s cubic-bezier(0.12, 0, 0.30, 1)`
-                    }}>
+                    <div className="track" style={{ transform: `translateX(${offset}px)`, transition: `transform ${animTime}s cubic-bezier(0.12, 0, 0.30, 1)` }}>
                         {cards.map((item, i) => (
                             <div key={i} className="item-card" style={{'--item-color': item.color}}>
                                 <img src={item.img} className="item-img" alt="" />
@@ -190,34 +169,28 @@ function App() {
                         <span className="slider"></span>
                         <span className="label-text">⚡ БЫСТРО</span>
                     </label>
-                    
                     <button onClick={spin} disabled={spinning || user.spins < 1} className="action-btn">
                         {spinning ? "КРУТИМ..." : user.spins > 0 ? "КРУТИТЬ (1 SPIN)" : "НЕТ СПИНОВ"}
                     </button>
-                    
-                    {user.spins < 1 && (
-                        <div className="no-spins-hint">Занеси профит, чтобы получить спины!</div>
-                    )}
+                    {user.spins < 1 && <div className="no-spins-hint">Занеси профит, чтобы получить спины!</div>}
                 </div>
             </div>
 
-            {/* ВЫИГРЫШ */}
             {winItem && (
                 <div className="win-modal-overlay" onClick={() => setWinItem(null)}>
                     <div className="win-card animate-pop-up" onClick={e => e.stopPropagation()}>
                         <div className="win-glow" style={{background: winItem.color}}></div>
-                        
-                        <div className="win-title">{winItem.id === 'empty' ? 'НЕ ПОВЕЗЛО' : 'ВЫИГРЫШ'}</div>
+                        <div className="win-title">{winItem.type === 'empty' ? 'НЕ ПОВЕЗЛО' : 'ВЫИГРЫШ'}</div>
                         <img src={winItem.img} className="win-img animate-float" alt="" />
-                        
                         <div className="win-name" style={{color: winItem.color}}>{winItem.name}</div>
                         
-                        {winItem.id !== 'empty' && 
-                            <div className="win-desc">Заявка на выдачу отправлена админу!</div>
-                        }
+                        {/* Описание действий для юзера */}
+                        {winItem.type === 'status' && <div className="win-desc">Проверь бота! Там кнопка для ввода статуса.</div>}
+                        {winItem.type === 'money' && <div className="win-desc">Зачислено на баланс!</div>}
+                        {winItem.type === 'respect' && <div className="win-desc">Админ жмет тебе руку!</div>}
                         
                         <button className="collect-btn" onClick={() => setWinItem(null)}>
-                            {winItem.id === 'empty' ? 'ЗАКРЫТЬ' : 'ОТЛИЧНО'}
+                            {winItem.type === 'empty' ? 'ЗАКРЫТЬ' : 'ОТЛИЧНО'}
                         </button>
                     </div>
                 </div>
