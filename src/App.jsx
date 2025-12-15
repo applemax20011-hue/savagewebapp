@@ -1,151 +1,180 @@
-import { useState, useEffect, useRef } from 'react';
-import './App.css';
+import { useState, useEffect } from 'react';
+import './index.css';
 
-// ⚠️ ЗАМЕНИ НА СВОЙ URL NGROK (без / в конце)
+// 👇👇👇 ВСТАВЬ СЮДА СВОЙ HTTPS URL ОТ NGROK 👇👇👇
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev"; 
 
-// --- COMPONENTS ---
+// --- 1. ПРОФИЛЬ (С кассой и фото) ---
+const Profile = ({ user, tgUser }) => {
+  // Аватарка: либо из телеграма, либо заглушка
+  const avatarUrl = tgUser?.photo_url 
+    ? tgUser.photo_url 
+    : "https://cdn-icons-png.flaticon.com/512/149/149071.png";
 
-const Profile = ({ user }) => (
-  <div className="screen">
-    <div className="profile-header">
-      <div className="avatar">🦈</div>
-      <h2>{user?.username || "Loading..."}</h2>
-      <p style={{color: 'var(--text-gray)'}}>ID: {user?.id || "..."}</p>
-    </div>
+  // Имя: если есть Fake Tag - показываем его, иначе username
+  const displayName = user?.fake_tag ? user.fake_tag : (user?.username || "Guest");
+  const isFake = !!user?.fake_tag;
 
-    <div className="stat-grid">
-      <div className="stat-card">
-        <p style={{color: 'var(--text-gray)', fontSize: '12px'}}>Баланс</p>
-        <h2 className="gradient-text">{user?.balance?.toLocaleString() || 0} ₽</h2>
+  return (
+    <div className="screen">
+      <div className="glass-card profile-header">
+        <div className="avatar" style={{ backgroundImage: `url(${avatarUrl})` }}></div>
+        <div className="user-info">
+          <h3 className={isFake ? "fake-tag" : ""}>
+             {isFake ? displayName : `@${displayName}`}
+          </h3>
+          <span>ID: {user?.id || tgUser?.id || "..."}</span>
+          <br/>
+          <span style={{opacity: 0.7}}>Рег: {user?.register_date || "Недавно"}</span>
+        </div>
       </div>
-      <div className="stat-card">
-        <p style={{color: 'var(--text-gray)', fontSize: '12px'}}>Профитов</p>
-        <h3>{user?.profits || 0}</h3>
+
+      <div className="stats-grid">
+        <div className="stat-box">
+          <span className="stat-label">Баланс</span>
+          <h4>{user?.balance?.toLocaleString() || 0} ₽</h4>
+        </div>
+        <div className="stat-box">
+          <span className="stat-label">Спины</span>
+          <h4 style={{color: 'var(--secondary)'}}>{user?.spins || 0} 🎟</h4>
+        </div>
+      </div>
+
+      <h4 style={{marginTop: '20px', marginLeft: '5px'}}>📊 Моя Касса</h4>
+      <div className="glass-card kassa-block">
+        <div className="kassa-row">
+          <span>За сегодня:</span>
+          <span className="kassa-val" style={{color: '#fff'}}>{user?.stats?.day?.toLocaleString() || 0} ₽</span>
+        </div>
+        <div className="kassa-row">
+          <span>За неделю:</span>
+          <span className="kassa-val">{user?.stats?.week?.toLocaleString() || 0} ₽</span>
+        </div>
+        <div className="kassa-row">
+          <span>За месяц:</span>
+          <span className="kassa-val">{user?.stats?.month?.toLocaleString() || 0} ₽</span>
+        </div>
+        <div className="kassa-row" style={{borderTop: '1px solid #333', marginTop: '5px', paddingTop: '10px'}}>
+          <span style={{color: 'var(--primary)'}}>За всё время:</span>
+          <span className="kassa-val" style={{color: 'var(--primary)'}}>{user?.stats?.all?.toLocaleString() || 0} ₽</span>
+        </div>
       </div>
     </div>
-    
-    <div className="stat-card" style={{marginTop: '15px'}}>
-        <p style={{color: 'var(--text-gray)', fontSize: '12px'}}>Спины Ракетки</p>
-        <h3 style={{color: 'var(--secondary)'}}>{user?.spins || 0} 🎟</h3>
-    </div>
-  </div>
-);
+  );
+};
 
-const RocketGame = ({ user, onSpin }) => {
+// --- 2. ИГРА РАКЕТКА ---
+const RocketGame = ({ user, refreshData }) => {
   const [flying, setFlying] = useState(false);
   const [multiplier, setMultiplier] = useState(1.00);
-  const [crashed, setCrashed] = useState(false);
-  const [result, setResult] = useState(null);
+  const [status, setStatus] = useState("idle"); // idle, fly, crash, win
 
   const startGame = async () => {
-    if (user.spins <= 0) {
-      alert("Нет спинов! Сделай профит.");
+    if ((user?.spins || 0) <= 0) {
+      window.Telegram.WebApp.showAlert("У вас закончились спины! Сделайте профит.");
       return;
     }
     setFlying(true);
-    setCrashed(false);
-    setResult(null);
+    setStatus("fly");
     setMultiplier(1.00);
 
-    // Запрос к API
-    try {
-      // Имитация полета перед получением результата
-      let currentX = 1.0;
-      const interval = setInterval(() => {
-        currentX += 0.05;
-        setMultiplier(currentX);
-      }, 100);
+    // Анимация набора высоты (визуальная)
+    const timer = setInterval(() => {
+        setMultiplier(prev => prev + 0.03);
+    }, 50);
 
-      // Реальный запрос (раскомментируй когда будет API)
+    try {
       const res = await fetch(`${API_URL}/api/rocket/spin`, {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ user_id: user.id })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id })
       });
       const data = await res.json();
       
-      clearInterval(interval);
+      clearInterval(timer);
 
       if (data.success) {
-        setMultiplier(data.multiplier || 2.5); // Ставим итоговый X
-        setResult(`Вы выиграли x${data.multiplier}!`);
-        onSpin(); // Обновить баланс пользователя
+        setMultiplier(data.multiplier); // Ставим выигрышный X
+        setStatus("win");
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       } else {
-        setCrashed(true);
-        setResult("Краш! Попробуй еще.");
+        setStatus("crash");
+        window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
       }
+      
+      refreshData(); // Обновляем баланс и спины
       setFlying(false);
 
     } catch (e) {
-      console.error(e);
+      clearInterval(timer);
       setFlying(false);
+      setStatus("idle");
+      console.error(e);
     }
   };
 
   return (
     <div className="screen">
-      <h2 style={{marginBottom: '20px'}}>🚀 Ракетка</h2>
-      
-      <div className="rocket-area">
-        {crashed ? (
-           <h1 style={{color: 'red', fontSize: '40px'}}>💥 CRASH</h1>
-        ) : (
-           <div className="rocket-container" style={{textAlign: 'center'}}>
-             <div className="rocket-obj" style={{
-                 transform: flying ? `translateY(-${(multiplier - 1)*50}px) scale(${1 + (multiplier-1)*0.2})` : 'none'
-             }}>🚀</div>
-             <h1 style={{marginTop: '20px'}}>x{multiplier.toFixed(2)}</h1>
-           </div>
-        )}
+      <h2>🚀 Ракетка</h2>
+      <div className="glass-card rocket-zone">
+         {status === "crash" && <h1 style={{color: 'var(--danger)', fontSize:'40px'}}>CRASH</h1>}
+         {status === "win" && <h1 style={{color: 'var(--primary)', fontSize:'40px'}}>x{multiplier.toFixed(2)}</h1>}
+         
+         {(status === "fly" || status === "idle") && (
+            <div style={{textAlign: 'center'}}>
+                <div className="rocket-emoji" style={{
+                    transform: status === "fly" ? `translateY(-${(multiplier*10)}px) scale(1.2)` : 'none'
+                }}>🚀</div>
+                <h2 style={{marginTop:'10px'}}>x{multiplier.toFixed(2)}</h2>
+            </div>
+         )}
       </div>
+      
+      <p style={{textAlign: 'center', color: '#666', marginBottom: '10px'}}>
+         Осталось спинов: <b style={{color: '#fff'}}>{user?.spins || 0}</b>
+      </p>
 
-      {result && <p style={{textAlign: 'center', marginBottom: '10px'}}>{result}</p>}
-
-      <button 
-        className="launch-btn" 
-        onClick={startGame} 
-        disabled={flying || user?.spins <= 0}
-      >
-        {flying ? "ЛЕТИМ..." : `ЗАПУСТИТЬ (Осталось: ${user?.spins || 0})`}
+      <button className="btn-neon" onClick={startGame} disabled={flying}>
+        {flying ? "ЛЕТИМ..." : "ЗАПУСТИТЬ"}
       </button>
     </div>
   );
 };
 
+// --- 3. НАСТАВНИКИ ---
 const Mentors = () => {
-  const [mentors, setMentors] = useState([]);
+  const [list, setList] = useState([]);
 
   useEffect(() => {
     fetch(`${API_URL}/api/mentors`)
-      .then(res => res.json())
-      .then(data => setMentors(data))
-      .catch(err => console.log("Demo mode: loading mock mentors"));
-      // Demo data
-      if(mentors.length === 0) {
-          setMentors([
-              {id: 1, name: "Savage Mentor", directions: "Трейд, NFT", fee_percent: 10, info: "Топовый наставник"},
-              {id: 2, name: "Crypto Queen", directions: "Эскорт", fee_percent: 15, info: "Лучший саппорт"}
-          ]);
-      }
+      .then(r => r.json())
+      .then(d => setList(d))
+      .catch(e => console.log(e));
   }, []);
 
   return (
     <div className="screen">
-      <h2 style={{marginBottom: '20px'}}>👨‍🏫 Наставники</h2>
-      {mentors.map(m => (
-        <div key={m.id} className="mentor-card">
-          <div className="mentor-img" style={{backgroundImage: `url(${m.image_url || 'https://via.placeholder.com/400x150?text=MENTOR'})`}}></div>
-          <div className="mentor-info">
-            <div style={{display: 'flex', justifyContent: 'space-between'}}>
-                <h3>{m.name}</h3>
-                <span style={{color: 'var(--primary)', fontWeight: 'bold'}}>{m.fee_percent}%</span>
+      <h2>👨‍🏫 Наставники</h2>
+      {list.map((m, i) => (
+        <div key={i} className="glass-card" style={{padding: '0'}}>
+          <div style={{
+            height: '120px', 
+            background: `url(${m.image_url || 'https://via.placeholder.com/400x150'}) center/cover`,
+            borderRadius: '20px 20px 0 0'
+          }}></div>
+          <div style={{padding: '15px'}}>
+            <div style={{display:'flex', justifyContent:'space-between'}}>
+                <h4>{m.name}</h4>
+                <span style={{color:'var(--primary)'}}>{m.fee_percent}%</span>
             </div>
-            <p style={{color: 'var(--text-gray)', fontSize: '13px', margin: '10px 0'}}>{m.info}</p>
-            <div>
-                {m.directions.split(',').map(d => (
-                    <span key={d} className="mentor-tag">{d}</span>
-                ))}
+            <p style={{fontSize:'12px', color:'#aaa'}}>{m.info}</p>
+            <div style={{marginTop:'10px'}}>
+               {m.directions.split(',').map(d => (
+                 <span key={d} style={{
+                    fontSize:'10px', background:'rgba(255,255,255,0.1)', 
+                    padding:'4px 8px', borderRadius:'5px', marginRight:'5px'
+                 }}>{d}</span>
+               ))}
             </div>
           </div>
         </div>
@@ -154,95 +183,99 @@ const Mentors = () => {
   );
 };
 
-const Leaderboard = () => {
-    const [leaders, setLeaders] = useState([]);
-
+// --- 4. ТОП ---
+const TopLeaders = () => {
+    const [top, setTop] = useState([]);
+  
     useEffect(() => {
-        fetch(`${API_URL}/api/top`)
-            .then(res => res.json())
-            .then(data => setLeaders(data))
-            .catch(() => {
-                setLeaders([
-                    {rank: 1, username: "SavageKing", balance: 500000},
-                    {rank: 2, username: "WorkerOne", balance: 320000},
-                    {rank: 3, username: "RichGuy", balance: 150000},
-                ])
-            });
+      fetch(`${API_URL}/api/top`).then(r => r.json()).then(setTop).catch(console.error);
     }, []);
-
+  
     return (
-        <div className="screen">
-            <h2 style={{marginBottom: '20px'}}>🏆 Топ Воркеров</h2>
-            {leaders.map((l, i) => (
-                <div key={i} className={`leader-row rank-${l.rank}`}>
-                    <div style={{display: 'flex', alignItems: 'center'}}>
-                        <b style={{width: '30px', color: 'var(--text-gray)'}}>#{l.rank}</b>
-                        <span>{l.username}</span>
-                    </div>
-                    <b style={{color: 'var(--primary)'}}>{l.balance.toLocaleString()} ₽</b>
+      <div className="screen">
+        <h2>🏆 Зал Славы</h2>
+        <div className="glass-card">
+           {top.map((u, i) => (
+             <div key={i} style={{
+                display:'flex', justifyContent:'space-between', padding:'10px 0',
+                borderBottom: i < top.length-1 ? '1px solid rgba(255,255,255,0.05)' : 'none'
+             }}>
+                <div style={{display:'flex', gap:'10px'}}>
+                    <b style={{color: i===0?'gold': i===1?'silver': i===2?'#cd7f32':'#555'}}>#{i+1}</b>
+                    <span>{u.username}</span>
                 </div>
-            ))}
+                <b style={{color:'var(--primary)'}}>{u.balance.toLocaleString()} ₽</b>
+             </div>
+           ))}
         </div>
-    )
-}
+      </div>
+    );
+};
 
-// --- MAIN APP ---
-
+// --- MAIN ---
 function App() {
-  const [activeTab, setActiveTab] = useState('profile');
-  const [user, setUser] = useState({ id: 0, username: "Guest", balance: 0, profits: 0, spins: 0 });
+  const [tab, setTab] = useState('profile');
+  const [user, setUser] = useState(null);
+  const [tgUser, setTgUser] = useState(null);
+
+  const fetchUserData = (uid) => {
+     fetch(`${API_URL}/api/user/${uid}`)
+       .then(r => r.json())
+       .then(data => {
+           if (!data.error) setUser(data);
+       })
+       .catch(err => console.error("API Error:", err));
+  };
 
   useEffect(() => {
-    // Интеграция с Telegram WebApp
+    // Инициализация Telegram
     const tg = window.Telegram.WebApp;
     tg.ready();
     tg.expand();
+    
+    // Берем данные из телеграма
+    const tUser = tg.initDataUnsafe?.user;
+    setTgUser(tUser);
 
-    // Получаем user_id из initData (или тестовый)
-    const userId = tg.initDataUnsafe?.user?.id || 6960794064; // Твой ID как фоллбек для тестов
+    // ID для запроса к БД (фоллбек для браузера - твой ID)
+    const queryId = tUser?.id || 6960794064;
+    
+    fetchUserData(queryId);
 
-    // Загружаем данные юзера
-    fetch(`${API_URL}/api/user/${userId}`)
-      .then(res => res.json())
-      .then(data => {
-          if(!data.error) setUser({ ...data, id: userId });
-      })
-      .catch(err => console.error("API Error", err));
-      
-    // Красим хедер телеграма в черный
-    tg.setHeaderColor('#0d0d0d');
+    // Настраиваем цвета приложения под тему
+    tg.setHeaderColor('#050505');
+    tg.setBackgroundColor('#050505');
   }, []);
 
-  const refreshUser = () => {
-      // Обновить данные после игры
-      const tg = window.Telegram.WebApp;
-      const userId = tg.initDataUnsafe?.user?.id || 6960794064;
-      fetch(`${API_URL}/api/user/${userId}`).then(res=>res.json()).then(data => !data.error && setUser({...data, id: userId}));
-  };
+  // Функция обновления данных (после игры)
+  const refresh = () => {
+      const uid = tgUser?.id || 6960794064;
+      fetchUserData(uid);
+  }
 
   return (
-    <div className="app-container">
-      {activeTab === 'profile' && <Profile user={user} />}
-      {activeTab === 'rocket' && <RocketGame user={user} onSpin={refreshUser} />}
-      {activeTab === 'mentors' && <Mentors />}
-      {activeTab === 'top' && <Leaderboard />}
+    <div>
+      {tab === 'profile' && <Profile user={user} tgUser={tgUser} />}
+      {tab === 'rocket' && <RocketGame user={user} refreshData={refresh} />}
+      {tab === 'mentors' && <Mentors />}
+      {tab === 'top' && <TopLeaders />}
 
       <div className="bottom-nav">
-        <div className={`nav-item ${activeTab === 'profile' ? 'active' : ''}`} onClick={() => setActiveTab('profile')}>
-          <div className="nav-icon">👤</div>
-          <span>Профиль</span>
+        <div className={`nav-item ${tab==='profile'?'active':''}`} onClick={()=>setTab('profile')}>
+           <div className="nav-icon">👤</div>
+           <span>Я</span>
         </div>
-        <div className={`nav-item ${activeTab === 'rocket' ? 'active' : ''}`} onClick={() => setActiveTab('rocket')}>
-          <div className="nav-icon">🚀</div>
-          <span>Ракетка</span>
+        <div className={`nav-item ${tab==='rocket'?'active':''}`} onClick={()=>setTab('rocket')}>
+           <div className="nav-icon">🚀</div>
+           <span>Игра</span>
         </div>
-        <div className={`nav-item ${activeTab === 'mentors' ? 'active' : ''}`} onClick={() => setActiveTab('mentors')}>
-          <div className="nav-icon">👨‍🏫</div>
-          <span>Наставники</span>
+        <div className={`nav-item ${tab==='mentors'?'active':''}`} onClick={()=>setTab('mentors')}>
+           <div className="nav-icon">🎓</div>
+           <span>Менторы</span>
         </div>
-        <div className={`nav-item ${activeTab === 'top' ? 'active' : ''}`} onClick={() => setActiveTab('top')}>
-          <div className="nav-icon">🏆</div>
-          <span>Топ</span>
+        <div className={`nav-item ${tab==='top'?'active':''}`} onClick={()=>setTab('top')}>
+           <div className="nav-icon">🏆</div>
+           <span>Топ</span>
         </div>
       </div>
     </div>
