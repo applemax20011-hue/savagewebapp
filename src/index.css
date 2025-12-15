@@ -113,3 +113,11 @@ body {
 @keyframes popUp { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .animate-float { animation: float 3s ease-in-out infinite; }
 .animate-fade-in { animation: fadeIn 0.8s ease-out; }
+
+.status-form { width: 100%; margin-top: 15px; }
+.status-input {
+  width: 90%; background: #222; border: 1px solid #444; color: #fff;
+  padding: 12px; border-radius: 8px; font-family: 'Inter'; font-weight: 700;
+  text-align: center; margin-bottom: 10px; outline: none;
+}
+.status-input:focus { border-color: var(--accent); }

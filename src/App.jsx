@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
 import axios from 'axios';
 
-// !!! ВСТАВЬ СВОЮ ССЫЛКУ NGROK !!!
-const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev";
+// !!! ТВОЯ ССЫЛКА NGROK !!!
+const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev"; // ЗАМЕНИ НА АКТУАЛЬНУЮ
 
 const api = axios.create({
     baseURL: API_URL,
@@ -13,16 +13,13 @@ const api = axios.create({
 const AUDIO = {
     spin: new Audio('https://cdn.freesound.org/previews/32/32184_379750-lq.mp3'),
     win: new Audio('https://cdn.freesound.org/previews/270/270404_5123851-lq.mp3'),
-    lose: new Audio('https://cdn.freesound.org/previews/76/76362_1083696-lq.mp3'),
     start: new Audio('https://cdn.freesound.org/previews/242/242501_4414128-lq.mp3')
 };
 Object.values(AUDIO).forEach(a => { a.volume = 0.4; a.load(); });
 const playSfx = (name) => { try { AUDIO[name].currentTime = 0; AUDIO[name].play().catch(()=>{}); } catch(e){} };
 
-// ПРИЗЫ (ДОЛЖНЫ СОВПАДАТЬ С API.PY)
 const ITEMS = [
     { id: 'empty',  name: "💀 ПУСТО",       type: 'empty',  color: '#3f3f46', img: "https://cdn-icons-png.flaticon.com/512/1077/1077114.png" },
-    { id: 'respect',name: "✊ РЕСПЕКТ",     type: 'respect',color: '#22c55e', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" }, 
     { id: 'check',  name: "💵 ЧЕК 0.5$",    type: 'money',  color: '#3b82f6', img: "https://cdn-icons-png.flaticon.com/512/2534/2534204.png" },
     { id: 'status', name: "💎 СТАТУС",      type: 'status', color: '#ec4899', img: "https://cdn-icons-png.flaticon.com/512/10692/10692795.png" },
 ];
@@ -45,11 +42,13 @@ function App() {
     const [winItem, setWinItem] = useState(null);
     const [fast, setFast] = useState(false);
 
+    // Ввод статуса
+    const [statusText, setStatusText] = useState("");
+    const [statusSent, setStatusSent] = useState(false);
+
     useEffect(() => {
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); tg.enableClosingConfirmation(); }
-        
-        // Получаем ID (или тестовый)
         const uid = tg?.initDataUnsafe?.user?.id || 5839201122; 
 
         api.get(`/init/${uid}`)
@@ -74,32 +73,25 @@ function App() {
 
     const spin = async () => {
         if(spinning || user.spins < 1) return;
-        
-        setWinItem(null); setAnimTime(0); setOffset(0);
+        setWinItem(null); setStatusSent(false); setStatusText(""); setAnimTime(0); setOffset(0);
 
         setTimeout(async () => {
             try {
                 setSpinning(true);
                 playSfx('start');
                 window.Telegram?.WebApp?.HapticFeedback.impactOccurred('medium');
-                
-                // Визуально списываем
                 setUser(prev => ({...prev, spins: prev.spins - 1}));
 
-                // Запрос
                 const res = await api.post(`/play`, { user_id: user.id });
                 const { winner_id, spins_left } = res.data;
 
-                // Настраиваем рулетку
                 const winner = ITEMS.find(i => i.id === winner_id);
                 const newCards = genStrip();
                 newCards[60] = winner;
                 setCards(newCards);
 
-                // Считаем позицию
-                const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
-                // Центрирование с учетом ширины экрана
                 const screenW = window.innerWidth > 600 ? 600 : (window.innerWidth - 32);
+                const shift = (Math.random() * CARD_WIDTH * 0.6) - (CARD_WIDTH * 0.3);
                 const finalScroll = (60 * CARD_WIDTH) + (CARD_WIDTH / 2) - (screenW / 2) + shift;
 
                 const duration = fast ? 0.5 : 5.5;
@@ -112,14 +104,9 @@ function App() {
                     setSpinning(false);
                     setWinItem(winner);
                     setUser(prev => ({...prev, spins: spins_left}));
-
                     if(winner.type !== 'empty') {
-                        playSfx('win');
                         confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
-                        window.Telegram?.WebApp?.HapticFeedback.notificationOccurred('success');
-                    } else {
-                        playSfx('lose');
-                        window.Telegram?.WebApp?.HapticFeedback.notificationOccurred('error');
+                        playSfx('win');
                     }
                 }, duration * 1000);
 
@@ -129,6 +116,20 @@ function App() {
                 window.Telegram?.WebApp?.showAlert("Ошибка связи!");
             }
         }, 50);
+    };
+
+    const sendStatus = async () => {
+        if(!statusText.trim()) return;
+        try {
+            await api.post('/send_status', { 
+                user_id: user.id, 
+                username: user.username, 
+                text: statusText 
+            });
+            setStatusSent(true);
+        } catch(e) {
+            window.Telegram?.WebApp?.showAlert("Ошибка отправки!");
+        }
     };
 
     if (loading) return <Loader />;
@@ -177,21 +178,31 @@ function App() {
             </div>
 
             {winItem && (
-                <div className="win-modal-overlay" onClick={() => setWinItem(null)}>
-                    <div className="win-card animate-pop-up" onClick={e => e.stopPropagation()}>
+                <div className="win-modal-overlay">
+                    <div className="win-card animate-pop-up">
                         <div className="win-glow" style={{background: winItem.color}}></div>
                         <div className="win-title">{winItem.type === 'empty' ? 'НЕ ПОВЕЗЛО' : 'ВЫИГРЫШ'}</div>
                         <img src={winItem.img} className="win-img animate-float" alt="" />
                         <div className="win-name" style={{color: winItem.color}}>{winItem.name}</div>
                         
-                        {/* Описание действий для юзера */}
-                        {winItem.type === 'status' && <div className="win-desc">Проверь бота! Там кнопка для ввода статуса.</div>}
                         {winItem.type === 'money' && <div className="win-desc">Зачислено на баланс!</div>}
-                        {winItem.type === 'respect' && <div className="win-desc">Админ жмет тебе руку!</div>}
                         
-                        <button className="collect-btn" onClick={() => setWinItem(null)}>
-                            {winItem.type === 'empty' ? 'ЗАКРЫТЬ' : 'ОТЛИЧНО'}
-                        </button>
+                        {winItem.type === 'status' && !statusSent && (
+                            <div className="status-form">
+                                <div className="win-desc">Введите текст статуса:</div>
+                                <input className="status-input" value={statusText} onChange={e => setStatusText(e.target.value)} maxLength={20} />
+                                <button className="collect-btn" onClick={sendStatus}>ОТПРАВИТЬ АДМИНУ</button>
+                            </div>
+                        )}
+                        {winItem.type === 'status' && statusSent && (
+                            <div className="win-desc" style={{color: '#22c55e'}}>✅ Отправлено админу!</div>
+                        )}
+                        
+                        {(winItem.type !== 'status' || statusSent) && (
+                            <button className="collect-btn" onClick={() => setWinItem(null)}>
+                                {winItem.type === 'empty' ? 'ЗАКРЫТЬ' : 'ОТЛИЧНО'}
+                            </button>
+                        )}
                     </div>
                 </div>
             )}
