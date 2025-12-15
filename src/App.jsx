@@ -41,8 +41,6 @@ function App() {
     const [animTime, setAnimTime] = useState(0);
     const [winItem, setWinItem] = useState(null);
     const [fast, setFast] = useState(false);
-
-    // Ввод статуса
     const [statusText, setStatusText] = useState("");
     const [statusSent, setStatusSent] = useState(false);
 
@@ -51,17 +49,15 @@ function App() {
         if (tg) { tg.ready(); tg.expand(); tg.enableClosingConfirmation(); }
         const uid = tg?.initDataUnsafe?.user?.id || 5839201122; 
 
-        api.get(`/init/${uid}`)
-            .then(res => {
-                setUser({
-                    id: uid,
-                    username: tg?.initDataUnsafe?.user?.username || res.data.username,
-                    spins: res.data.spins,
-                    photo_url: tg?.initDataUnsafe?.user?.photo_url
-                });
-                setTimeout(() => setLoading(false), 800);
-            })
-            .catch(() => { setLoading(false); });
+        api.get(`/init/${uid}`).then(res => {
+            setUser({
+                id: uid,
+                username: tg?.initDataUnsafe?.user?.username || res.data.username,
+                spins: res.data.spins,
+                photo_url: tg?.initDataUnsafe?.user?.photo_url
+            });
+            setTimeout(() => setLoading(false), 800);
+        }).catch(() => { setLoading(false); });
         setCards(genStrip());
     }, []);
 
@@ -84,8 +80,8 @@ function App() {
 
                 const res = await api.post(`/play`, { user_id: user.id });
                 const { winner_id, spins_left } = res.data;
-
                 const winner = ITEMS.find(i => i.id === winner_id);
+                
                 const newCards = genStrip();
                 newCards[60] = winner;
                 setCards(newCards);
@@ -109,7 +105,6 @@ function App() {
                         playSfx('win');
                     }
                 }, duration * 1000);
-
             } catch (e) {
                 setSpinning(false);
                 setUser(prev => ({...prev, spins: prev.spins + 1}));
@@ -121,15 +116,9 @@ function App() {
     const sendStatus = async () => {
         if(!statusText.trim()) return;
         try {
-            await api.post('/send_status', { 
-                user_id: user.id, 
-                username: user.username, 
-                text: statusText 
-            });
+            await api.post('/send_status', { user_id: user.id, username: user.username, text: statusText });
             setStatusSent(true);
-        } catch(e) {
-            window.Telegram?.WebApp?.showAlert("Ошибка отправки!");
-        }
+        } catch(e) { window.Telegram?.WebApp?.showAlert("Ошибка!"); }
     };
 
     if (loading) return <Loader />;
@@ -139,15 +128,9 @@ function App() {
             <div className="header">
                 <div className="user-block">
                     {user.photo_url ? <img src={user.photo_url} className="avatar-img"/> : <div className="avatar">🦈</div>}
-                    <div>
-                        <div className="nickname">@{user.username}</div>
-                        <div className="uid">ID: {user.id}</div>
-                    </div>
+                    <div><div className="nickname">@{user.username}</div><div className="uid">ID: {user.id}</div></div>
                 </div>
-                <div className="balance-block">
-                    <div className="balance-label">SPINS</div>
-                    <div className="balance-val">{user.spins}</div>
-                </div>
+                <div className="balance-block"><div className="balance-label">SPINS</div><div className="balance-val">{user.spins}</div></div>
             </div>
 
             <div className="game-area">
@@ -163,17 +146,14 @@ function App() {
                         ))}
                     </div>
                 </div>
-
                 <div className="controls">
                     <label className="fast-switch">
                         <input type="checkbox" checked={fast} onChange={e => setFast(e.target.checked)} disabled={spinning} />
-                        <span className="slider"></span>
-                        <span className="label-text">⚡ БЫСТРО</span>
+                        <span className="slider"></span><span className="label-text">⚡ БЫСТРО</span>
                     </label>
                     <button onClick={spin} disabled={spinning || user.spins < 1} className="action-btn">
                         {spinning ? "КРУТИМ..." : user.spins > 0 ? "КРУТИТЬ (1 SPIN)" : "НЕТ СПИНОВ"}
                     </button>
-                    {user.spins < 1 && <div className="no-spins-hint">Занеси профит, чтобы получить спины!</div>}
                 </div>
             </div>
 
@@ -186,7 +166,6 @@ function App() {
                         <div className="win-name" style={{color: winItem.color}}>{winItem.name}</div>
                         
                         {winItem.type === 'money' && <div className="win-desc">Зачислено на баланс!</div>}
-                        
                         {winItem.type === 'status' && !statusSent && (
                             <div className="status-form">
                                 <div className="win-desc">Введите текст статуса:</div>
@@ -194,9 +173,7 @@ function App() {
                                 <button className="collect-btn" onClick={sendStatus}>ОТПРАВИТЬ АДМИНУ</button>
                             </div>
                         )}
-                        {winItem.type === 'status' && statusSent && (
-                            <div className="win-desc" style={{color: '#22c55e'}}>✅ Отправлено админу!</div>
-                        )}
+                        {winItem.type === 'status' && statusSent && <div className="win-desc" style={{color: '#22c55e'}}>✅ Отправлено!</div>}
                         
                         {(winItem.type !== 'status' || statusSent) && (
                             <button className="collect-btn" onClick={() => setWinItem(null)}>
