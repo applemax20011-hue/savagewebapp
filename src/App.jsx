@@ -1,270 +1,397 @@
 import React, { useEffect, useState, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import './index.css';
 
-// ⚠️ ЗАМЕНИ ССЫЛКУ NGROK
-const API_URL = "https://ТВОЙ_АДРЕС_NGROK.ngrok-free.app/api";
+// ⚠️⚠️⚠️ ОБЯЗАТЕЛЬНО ВСТАВЬ СЮДА СВОЮ NGROK ССЫЛКУ! ⚠️⚠️⚠️
+const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev/api";
 
+// Звуковые эффекты
 const SOUNDS = {
   click: "https://cdn.freesound.org/previews/256/256116_3263906-lq.mp3",
   win: "https://cdn.freesound.org/previews/270/270402_5123851-lq.mp3",
   spin: "https://cdn.freesound.org/previews/45/45903_232777-lq.mp3",
   tab: "https://cdn.freesound.org/previews/242/242501_4414128-lq.mp3"
 };
-const playSound = (k) => { const a = new Audio(SOUNDS[k]); a.volume=0.3; a.play().catch(()=>{}); };
+const playSound = (k) => { 
+    try { const a = new Audio(SOUNDS[k]); a.volume=0.3; a.currentTime=0; a.play().catch(()=>{}); } catch(e){} 
+};
 
-const SERVICES = [
-  { t: "📊 Обмен OKX", u: "https://t.me/OKXCrypto_Robot" },
-  { t: "🌐 Web Trade", u: "https://t.me/ForbexTradeBot" },
-  { t: "💊 Наркошоп", u: "https://t.me/ReagentShopBot" },
-  { t: "🔞 Эскорт", u: "https://t.me/RoyaleEscort_Robot" },
-  { t: "🖼 NFT", u: "https://t.me/CheckRefaundRuBot" }
+// Предметы рулетки
+const ITEMS = [
+  { id: 'empty', name: "💀", color: '#333' },
+  { id: 'check', name: "💵", color: '#00ff41' },
+  { id: 'status', name: "💎", color: '#d946ef' }
 ];
 
 function App() {
   const [tab, setTab] = useState('profile');
-  const [data, setData] = useState(null); // User Data
-  const [kassa, setKassa] = useState(null);
-  const [tops, setTops] = useState([]);
-  const [topPeriod, setTopPeriod] = useState('day');
-  const [mentors, setMentors] = useState([]);
-  const [card, setCard] = useState(null);
-  const [spinAnim, setSpinAnim] = useState(false);
-  const [winData, setWinData] = useState(null); // {type: 'money'|'status'|'empty', val: ...}
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Состояния игры
+  const [spinning, setSpinning] = useState(false);
+  const [cards, setCards] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [winData, setWinData] = useState(null); 
+  const [statusText, setStatusText] = useState("");
+  const [statusSent, setStatusSent] = useState(false);
+  const [fastMode, setFastMode] = useState(false);
 
-  // Init
+  // Ментор
+  const [mentorForm, setMentorForm] = useState({ info: "", fee: 0 });
+
+  const tg = window.Telegram?.WebApp;
+  const uid = tg?.initDataUnsafe?.user?.id || 5839201122; // Тестовый ID если не в ТГ
+
   useEffect(() => {
-    const tg = window.Telegram.WebApp;
-    tg.ready();
-    tg.expand();
-    tg.setHeaderColor('#050505');
-    
-    const uid = tg.initDataUnsafe?.user?.id || 6960794064; // Твой ID для теста
-    loadUser(uid);
-    loadKassa();
-    loadCard();
-    loadMentors();
+    if(tg) { 
+        tg.ready(); 
+        tg.expand(); 
+        tg.setHeaderColor('#050505'); // Черная шапка
+    }
+    fetchData();
+    initGame();
   }, []);
 
-  // Top loader
-  useEffect(() => {
-    fetch(`${API_URL}/top/${topPeriod}`, {headers: {'ngrok-skip-browser-warning':'true'}})
-      .then(r=>r.json()).then(setTops);
-  }, [topPeriod]);
-
-  const loadUser = (uid) => fetch(`${API_URL}/user/${uid}`, {headers: {'ngrok-skip-browser-warning':'true'}}).then(r=>r.json()).then(setData);
-  const loadKassa = () => fetch(`${API_URL}/kassa`, {headers: {'ngrok-skip-browser-warning':'true'}}).then(r=>r.json()).then(setKassa);
-  const loadCard = () => fetch(`${API_URL}/config/card`, {headers: {'ngrok-skip-browser-warning':'true'}}).then(r=>r.json()).then(setCard);
-  const loadMentors = () => fetch(`${API_URL}/mentors`, {headers: {'ngrok-skip-browser-warning':'true'}}).then(r=>r.json()).then(setMentors);
-
-  const switchTab = (t) => { playSound('tab'); setTab(t); window.Telegram.WebApp.HapticFeedback.selectionChanged(); }
-
-  // Game Logic
-  const doSpin = async () => {
-    if(data.spins < 1) return alert("Нет спинов!");
-    setSpinAnim(true);
-    playSound('spin');
-    
+  const fetchData = async () => {
     try {
-        const res = await fetch(`${API_URL}/rocket/spin`, {
-            method: 'POST', headers: {'Content-Type':'application/json', 'ngrok-skip-browser-warning':'true'},
-            body: JSON.stringify({user_id: data.id})
-        });
-        const json = await res.json();
-        
-        setTimeout(() => {
-            setSpinAnim(false);
-            if(json.error) return alert(json.error);
-            
-            // Обновляем спины локально
-            setData(prev => ({...prev, spins: json.spins_left}));
-            
-            if(json.type !== 'empty') {
-                setWinData({type: json.type, val: json.value});
-                playSound('win');
-                window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-            } else {
-                window.Telegram.WebApp.HapticFeedback.notificationOccurred('error');
-            }
-        }, 2000); // 2 сек анимации
-    } catch(e) { setSpinAnim(false); }
-  };
-
-  const sendStatus = async (e) => {
-      e.preventDefault();
-      const text = e.target.status.value;
-      await fetch(`${API_URL}/rocket/status`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({user_id: data.id, text})
+      const res = await fetch(`${API_URL}/app_data/${uid}`, {
+        headers: { "ngrok-skip-browser-warning": "true" }
       });
-      alert("Отправлено админу на проверку!");
-      setWinData(null);
+      const json = await res.json();
+      
+      if(!json.error) {
+        setData(json);
+        if(json.is_mentor) setMentorForm(json.mentor_panel);
+      }
+      setLoading(false);
+    } catch(e) { 
+        console.error("Ошибка загрузки:", e);
+        // Не убираем лоадер, чтобы юзер видел что грузится (или добавить экран ошибки)
+    }
   };
 
-  if(!data) return <div className="loader">SAVAGE TEAM...</div>;
+  const initGame = () => {
+    let arr = [];
+    for(let i=0; i<80; i++) arr.push({...ITEMS[Math.floor(Math.random()*ITEMS.length)], uid: Math.random()});
+    setCards(arr);
+  };
+
+  const switchTab = (t) => { playSound('tab'); setTab(t); };
+
+  const spin = async () => {
+    if(spinning || data.user.spins < 1) return;
+    setWinData(null); setStatusSent(false); setStatusText("");
+    setOffset(0); 
+    
+    // Оптимистичное обновление спинов
+    setData(p => ({...p, user: {...p.user, spins: p.user.spins - 1}}));
+    setSpinning(true);
+    if(!fastMode) playSound('spin');
+
+    try {
+      const res = await fetch(`${API_URL}/play`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ user_id: uid })
+      });
+      const json = await res.json();
+      const winner = ITEMS.find(i => i.id === json.winner_id);
+      
+      // Подкручиваем ленту
+      const newCards = [...cards];
+      newCards[60] = winner;
+      setCards(newCards);
+
+      // Анимация
+      const cardW = 110; 
+      const center = window.innerWidth / 2;
+      // Немного рандома для реалистичности остановки
+      const randomOffset = Math.floor(Math.random() * 40) - 20;
+      const target = (60 * cardW) + (cardW/2) - center + randomOffset;
+      
+      setOffset(-target);
+
+      setTimeout(() => {
+        setSpinning(false);
+        if(winner.id !== 'empty') {
+           playSound('win');
+           setWinData({ type: winner.id === 'check' ? 'money' : 'status', val: winner.name });
+           confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+           if(tg) tg.HapticFeedback.notificationOccurred('success');
+        } else {
+           if(tg) tg.HapticFeedback.impactOccurred('light');
+        }
+      }, fastMode ? 500 : 5000);
+
+    } catch(e) { 
+        setSpinning(false); 
+        // Вернуть спин при ошибке
+        setData(p => ({...p, user: {...p.user, spins: p.user.spins + 1}}));
+    }
+  };
+
+  const sendStatus = async () => {
+    if(!statusText) return;
+    await fetch(`${API_URL}/send_status`, {
+       method: 'POST', headers: {'Content-Type':'application/json'},
+       body: JSON.stringify({ user_id: uid, username: data.user.real_username, text: statusText })
+    });
+    setStatusSent(true);
+  };
+
+  const saveMentor = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const info = formData.get('info');
+    const fee = formData.get('fee');
+    await fetch(`${API_URL}/update_mentor`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ user_id: uid, info, fee })
+    });
+    if(tg) tg.showAlert("Настройки сохранены!");
+  };
+
+  if(loading) return <div className="loader">SAVAGE OS<br/><span className="blink">LOADING...</span></div>;
 
   return (
     <div className="app-container">
-      {/* --- HEADER --- */}
-      <div className="neon-header">
-         SAVAGE <span style={{color:'var(--acc)'}}>TEAM</span>
-         <div className="online-dot"></div>
-      </div>
-
-      {/* --- PROFILE TAB --- */}
-      {tab === 'profile' && (
-        <div className="fade-in">
-           <div className="profile-card glass">
-              <div className="avatar-area">
-                 <div className="avatar">🦈</div>
-                 <div className="level-badge">LEVEL {Math.floor(data.profits_count / 10) + 1}</div>
-              </div>
-              <div className="p-info">
-                 <div className="p-name">{data.username}</div>
-                 <div className="p-id">ID: {data.id}</div>
-                 {data.is_fake && <div className="fake-badge">FAKETAG ON</div>}
-              </div>
-           </div>
-
-           <div className="stats-grid">
-              <div className="stat-box">
-                 <div className="s-label">БАЛАНС</div>
-                 <div className="s-val neon">{data.balance.toLocaleString()} ₽</div>
-              </div>
-              <div className="stat-box">
-                 <div className="s-label">СПИНЫ</div>
-                 <div className="s-val" style={{color:'#ff0055'}}>{data.spins}</div>
-              </div>
-           </div>
-
-           <div className="glass kassa-full">
-              <h3>💵 ЛИЧНАЯ КАССА</h3>
-              <div className="row"><span>Сегодня:</span> <b>{data.stats.day.toLocaleString()} ₽</b></div>
-              <div className="row"><span>Неделя:</span> <b>{data.stats.week.toLocaleString()} ₽</b></div>
-              <div className="row"><span>Месяц:</span> <b>{data.stats.month.toLocaleString()} ₽</b></div>
-              <div className="row bt"><span>ВСЕГО:</span> <b className="neon">{data.stats.all.toLocaleString()} ₽</b></div>
-           </div>
-           
-           {kassa && (
-               <div className="glass kassa-team">
-                  <h3>🌍 КАССА КОМАНДЫ</h3>
-                  <div className="big-num">{kassa.all.sum.toLocaleString()} ₽</div>
-                  <div className="sub-stat">Сегодня: {kassa.day.sum.toLocaleString()} ₽</div>
-               </div>
-           )}
-        </div>
-      )}
-
-      {/* --- TOPS TAB --- */}
-      {tab === 'tops' && (
-         <div className="fade-in">
-            <div className="tabs-switch">
-               {['day','week','month','all'].map(p => (
-                  <div key={p} className={`ts-item ${topPeriod===p?'act':''}`} onClick={()=>setTopPeriod(p)}>
-                     {p.toUpperCase()}
-                  </div>
-               ))}
-            </div>
-            <div className="top-list glass">
-               {tops.length === 0 ? <div style={{padding:20, textAlign:'center'}}>Пусто...</div> : 
-                tops.map((u, i) => (
-                  <div className="top-row" key={i}>
-                     <div className="rank">{u.rank}</div>
-                     <div className="t-name">{u.name}</div>
-                     <div className="t-val">{u.amount.toLocaleString()} ₽</div>
-                  </div>
-               ))}
-            </div>
-         </div>
-      )}
-
-      {/* --- GAME TAB --- */}
-      {tab === 'game' && (
-         <div className="fade-in game-screen">
-            <h1 className="game-title">ROCKET <span>SPIN</span></h1>
-            <div className={`rocket-container ${spinAnim ? 'shake' : ''}`}>
-                <div className="rocket-emoji" style={{transform: spinAnim ? 'translateY(-100px) scale(1.2)' : 'none'}}>🚀</div>
-            </div>
-            <button className="spin-btn" onClick={doSpin} disabled={spinAnim}>
-               {spinAnim ? "LETS GO..." : `КРУТИТЬ (${data.spins})`}
-            </button>
-            <div className="prizes-list">
-               <div>🎁 Статус (30%)</div>
-               <div>💵 0.5$ (10%)</div>
-               <div>💩 Пусто (60%)</div>
-            </div>
-         </div>
-      )}
-
-      {/* --- CARD TAB --- */}
-      {tab === 'card' && card && (
-         <div className="fade-in">
-            <div className="credit-card">
-               <div className="bank-name">{card.bank}</div>
-               <div className="chip"></div>
-               <div className="card-num" onClick={()=>{navigator.clipboard.writeText(card.number); alert('Скопировано!')}}>
-                  {card.number} <span style={{fontSize:12}}>📋</span>
-               </div>
-               <div className="card-fio">{card.fio}</div>
-               <div className="limits">Лимиты: {card.min} - {card.max} ₽</div>
-            </div>
-            <div className="info-txt">
-               ⚠️ Всегда сверяйте карту перед переводом! Нажмите на номер, чтобы скопировать.
-            </div>
-         </div>
-      )}
-
-      {/* --- SERVICES / MENTORS --- */}
-      {tab === 'services' && (
-         <div className="fade-in services-grid">
-            {SERVICES.map((s,i) => (
-               <a key={i} href={s.u} className="service-card">
-                  <div className="s-icon">🤖</div>
-                  <div className="s-title">{s.t}</div>
-               </a>
-            ))}
-         </div>
-      )}
+      <div className="bg-anim"></div>
       
-      {tab === 'mentor' && (
-         <div className="fade-in">
-            <h2>Наставники</h2>
-            {mentors.map(m => (
-                <div key={m.id} className="glass mentor-card">
-                    <img src={m.image_url} alt="" className="m-img"/>
-                    <div style={{padding:10}}>
-                        <h3>{m.name}</h3>
-                        <div className="m-tag">{m.directions}</div>
-                        <p>{m.info}</p>
-                        <div className="fee">Процент: {m.fee_percent}%</div>
-                    </div>
-                </div>
-            ))}
+      {/* --- 1. ПРОФИЛЬ --- */}
+      {tab === 'profile' && (
+         <div className="page fade-in">
+            <div className="id-card">
+               <div className="id-top">
+                  <div className="chip"></div>
+                  <div className="logo">SAVAGE TEAM</div>
+               </div>
+               <div className="id-main">
+                  <div className="ava-box">
+                     {tg?.initDataUnsafe?.user?.photo_url ? 
+                        <img src={tg.initDataUnsafe.user.photo_url} className="ava"/> : 
+                        <div className="ava-ph">🦈</div>
+                     }
+                  </div>
+                  <div className="info-box">
+                     <div className="label">OPERATIVE</div>
+                     {/* Если есть фейк тег - показываем его с глитчем */}
+                     <div className="val glitch" data-text={data.user.fake_tag || data.user.username}>
+                        {data.user.fake_tag || data.user.username}
+                     </div>
+                     <div className="row">
+                        <div><span className="label">ID</span> {data.user.id}</div>
+                        <div><span className="label">RANK</span> <span className="neon">{data.user.status}</span></div>
+                     </div>
+                  </div>
+               </div>
+               <div className="id-bot">MENTOR: {data.user.mentor}</div>
+            </div>
+
+            <div className="stats-row">
+               <div className="s-card">
+                  <div className="lbl">БАЛАНС</div>
+                  <div className="val neon">{data.user.balance.toLocaleString()} ₽</div>
+               </div>
+               <div className="s-card">
+                  <div className="lbl">ПРОФИТЫ</div>
+                  <div className="val">{data.user.profits_count}</div>
+               </div>
+            </div>
+            
+            <div className="stats-row" style={{marginTop: 5}}>
+               <div className="s-card">
+                  <div className="lbl">ДНИ В ТИМЕ</div>
+                  <div className="val">{data.user.days_with_us}</div>
+               </div>
+            </div>
+
+            <h3 className="neon-header">ИСТОРИЯ (ПОСЛЕДНИЕ)</h3>
+            <div className="hist-list">
+               {data.history.map((h,i) => (
+                  <div key={i} className="h-item">
+                     <div>
+                        <div className="h-serv">{h.service}</div>
+                        <div className="h-date">{h.date}</div>
+                     </div>
+                     <div className="h-sum">+{h.sum.toLocaleString()} ₽</div>
+                  </div>
+               ))}
+               {data.history.length === 0 && <div className="empty">Пусто...</div>}
+            </div>
          </div>
       )}
 
-      {/* --- МЕНЮ --- */}
+      {/* --- 2. КАРТА --- */}
+      {tab === 'card' && (
+         <div className="page fade-in">
+            <h3 className="neon-header">РЕКВИЗИТЫ</h3>
+            <div className="credit-card" onClick={() => {navigator.clipboard.writeText(data.card.number); if(tg) tg.showAlert('Номер скопирован!');}}>
+               <div className="bank-name">{data.card.bank}</div>
+               <div className="chip"></div>
+               <div className="card-num">{data.card.number}</div>
+               <div className="card-fio">{data.card.fio}</div>
+               <div className="copy-icon">📋</div>
+            </div>
+            <div className="hint">Нажми на карту, чтобы скопировать номер</div>
+         </div>
+      )}
+
+      {/* --- 3. ТОПЫ --- */}
+      {tab === 'tops' && (
+         <div className="page fade-in">
+            <div className="kassa-banner">
+                <div className="lbl">ОБЩАЯ КАССА</div>
+                <div className="val neon">{data.kassa.toLocaleString()} ₽</div>
+            </div>
+
+            <h3 className="neon-header">ТОП ЗА СЕГОДНЯ</h3>
+            <div className="top-list">
+               {data.top_day.map((u,i) => (
+                  <div key={i} className="top-item">
+                     <div className="rank">#{i+1}</div>
+                     <div className={`name ${u.is_fake?'fake':''}`}>{u.name}</div>
+                     <div className="score neon">{u.sum.toLocaleString()}</div>
+                  </div>
+               ))}
+               {data.top_day.length === 0 && <div className="empty">Сегодня тихо...</div>}
+            </div>
+
+            <h3 className="neon-header">ТОП БОГАЧЕЙ</h3>
+            <div className="top-list">
+               {data.top_all.map((u,i) => (
+                  <div key={i} className="top-item">
+                     <div className="rank">#{i+1}</div>
+                     <div className={`name ${u.is_fake?'fake':''}`}>{u.name}</div>
+                     <div className="score neon">{u.sum.toLocaleString()}</div>
+                  </div>
+               ))}
+            </div>
+         </div>
+      )}
+
+      {/* --- 4. ИГРА --- */}
+      {tab === 'game' && (
+         <div className="page fade-in game-wrap">
+            <h1 className="glitch" data-text="CASINO">CASINO</h1>
+            
+            <div className="controls-top">
+                <div className={`toggle ${fastMode ? 'active' : ''}`} onClick={() => setFastMode(!fastMode)}>
+                    ⚡ ТУРБО
+                </div>
+            </div>
+
+            <div className="roulette">
+               <div className="pointer"></div>
+               <div className="track" style={{
+                   transform: `translateX(${offset}px)`, 
+                   transition: spinning ? `transform ${fastMode ? 0.5 : 5}s cubic-bezier(0.1,0,0.1,1)` : 'none'
+               }}>
+                  {cards.map((c,i)=>(
+                     <div key={i} className="card" style={{borderColor: c.color}}>
+                        <div className="emoji">{c.name}</div>
+                     </div>
+                  ))}
+               </div>
+            </div>
+            
+            <button className="spin-btn" disabled={spinning} onClick={spin}>
+               КРУТИТЬ ({data.user.spins})
+            </button>
+         </div>
+      )}
+
+      {/* --- 5. АЧИВКИ --- */}
+      {tab === 'ach' && (
+         <div className="page fade-in">
+            <h3 className="neon-header">ДОСТИЖЕНИЯ</h3>
+            <div className="ach-grid">
+               {data.achievements.length > 0 ? data.achievements.map((a,i) => (
+                  <div key={i} className="ach-item">
+                      <div className="ach-icon">🏆</div>
+                      <div className="ach-name">{a}</div>
+                  </div>
+               )) : <div className="empty">Нет достижений. Воркай!</div>}
+            </div>
+         </div>
+      )}
+
+      {/* --- 6. СЕРВИСЫ --- */}
+      {tab === 'services' && (
+         <div className="page fade-in">
+            <h3 className="neon-header">СЕРВИСЫ & БОТЫ</h3>
+            <div className="services-grid">
+               {data.services.map((s,i)=>(
+                  <a key={i} href={s.u} className="service-card">
+                     <div className="s-title">{s.t}</div>
+                  </a>
+               ))}
+            </div>
+         </div>
+      )}
+
+      {/* --- 7. МЕНТОР (Только если is_mentor=true) --- */}
+      {tab === 'mentor' && (
+         <div className="page fade-in">
+            <h3 className="neon-header">ПАНЕЛЬ НАСТАВНИКА</h3>
+            {data.is_mentor && (
+               <div className="mentor-dash">
+                  <div className="mentor-stats">
+                     <div className="s-card"><div className="lbl">ОБОРОТ</div><div className="val neon">{data.mentor_panel.turnover.toLocaleString()}</div></div>
+                     <div className="s-card"><div className="lbl">УЧЕНИКИ</div><div className="val">{data.mentor_panel.students.length}</div></div>
+                  </div>
+                  
+                  <div className="student-list-box">
+                      <h4>Твои слоны 🐘</h4>
+                      {data.mentor_panel.students.map((s, i) => (
+                          <div key={i} className="st-row">
+                              <div>{s.name}</div>
+                              <div className="neon">{s.balance} ₽</div>
+                          </div>
+                      ))}
+                  </div>
+
+                  <form onSubmit={saveMentor} className="m-form">
+                     <label>Инфо о себе:</label>
+                     <textarea name="info" defaultValue={mentorForm.info} rows="3"></textarea>
+                     <label>Твой процент:</label>
+                     <input name="fee" type="number" defaultValue={mentorForm.fee}/>
+                     <button>СОХРАНИТЬ</button>
+                  </form>
+               </div>
+            )}
+         </div>
+      )}
+
+      {/* --- МЕНЮ (TAB BAR) --- */}
       <div className="nav-bar">
-         <btn className={tab==='profile'?'act':''} onClick={()=>switchTab('profile')}>🆔</btn>
-         <btn className={tab==='card'?'act':''} onClick={()=>switchTab('card')}>💳</btn>
-         <btn className={tab==='tops'?'act':''} onClick={()=>switchTab('tops')}>🏆</btn>
-         <btn className={tab==='game'?'act':''} onClick={()=>switchTab('game')}>🚀</btn>
-         <btn className={tab==='services'?'act':''} onClick={()=>switchTab('services')}>🛠</btn>
-         <btn className={tab==='mentor'?'act':''} onClick={()=>switchTab('mentor')}>👨‍🏫</btn>
+         <div className={`nav-btn ${tab==='profile'?'act':''}`} onClick={()=>switchTab('profile')}>🆔</div>
+         <div className={`nav-btn ${tab==='card'?'act':''}`} onClick={()=>switchTab('card')}>💳</div>
+         <div className={`nav-btn ${tab==='tops'?'act':''}`} onClick={()=>switchTab('tops')}>🏆</div>
+         <div className={`nav-btn ${tab==='game'?'act':''}`} onClick={()=>switchTab('game')}>🚀</div>
+         <div className={`nav-btn ${tab==='ach'?'act':''}`} onClick={()=>switchTab('ach')}>🎖</div>
+         <div className={`nav-btn ${tab==='services'?'act':''}`} onClick={()=>switchTab('services')}>🛠</div>
+         {data.is_mentor && <div className={`nav-btn ${tab==='mentor'?'act':''}`} onClick={()=>switchTab('mentor')}>👨‍🏫</div>}
       </div>
 
+      {/* Модалка выигрыша */}
       {winData && (
          <div className="modal" onClick={()=>setWinData(null)}>
             <div className="win-box" onClick={e=>e.stopPropagation()}>
                <div className="glow"></div>
-               <h2>{winData.type==='money'?'ДЕНЬГИ!':'СТАТУС!'}</h2>
-               {winData.type==='money' ? <h1>0.5$ Check</h1> : (
-                   <form onSubmit={sendStatus}>
-                       <p>Введите желаемый статус:</p>
-                       <input name="status" placeholder="BOSS" maxLength={15} autoFocus/>
-                       <button>ОТПРАВИТЬ АДМИНУ</button>
-                   </form>
+               <h2>{winData.type==='money'?'ВЫИГРЫШ!':'СТАТУС!'}</h2>
+               {winData.type==='money' ? <h1>{winData.val}</h1> : <div className="win-desc">Вы выиграли возможность установить кастомный статус!</div>}
+               
+               {winData.type==='status' && !statusSent && (
+                  <div className="status-inp-box">
+                     <input placeholder="Введи статус..." onChange={e=>setStatusText(e.target.value)} maxLength={15} autoFocus/>
+                     <button onClick={sendStatus}>ОТПРАВИТЬ</button>
+                  </div>
                )}
-               {winData.type==='money' && <p>Админ пришлет чек в ЛС.</p>}
+               {statusSent && <div className="ok">✅ Отправлено админу!</div>}
+               {winData.type === 'money' && <p>Заявка на выплату отправлена админу.</p>}
+               
+               <button className="close-btn" onClick={() => setWinData(null)}>ЗАКРЫТЬ</button>
             </div>
          </div>
       )}
