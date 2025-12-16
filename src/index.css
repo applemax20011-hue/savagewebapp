@@ -35,6 +35,7 @@ body {
 
 .ph-names { margin-top: 5px; }
 .ph-nick { font-size: 20px; font-weight: 800; }
+.ph-faketag { margin-top: 6px; display: inline-block; padding: 4px 10px; border-radius: 999px; background: rgba(244,63,94,0.12); border: 1px solid rgba(244,63,94,0.35); color: #f43f5e; font-size: 12px; font-weight: 800; letter-spacing: .5px; }
 .ph-mentor { font-size: 12px; color: var(--text-sec); background: #222; padding: 4px 10px; border-radius: 20px; display: inline-block; margin-top: 5px; }
 
 .total-block { background: linear-gradient(135deg, var(--acc), #6366f1); padding: 20px; border-radius: 20px; color: #fff; margin-top: 20px; box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3); }

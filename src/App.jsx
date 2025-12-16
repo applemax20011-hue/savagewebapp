@@ -38,7 +38,7 @@ function App() {
   const [winData, setWinData] = useState(null);
   const [statusText, setStatusText] = useState("");
   const [statusSent, setStatusSent] = useState(false);
-  const [topTab, setTopTab] = useState('day'); // day, month, all
+  const [topTab, setTopTab] = useState('day'); // day, week, month, all
 
   // Mentor
   const [mentorForm, setMentorForm] = useState({ info: "", fee: 0 });
@@ -125,17 +125,24 @@ function App() {
     if(tg) tg.showAlert("Сохранено!");
   };
 
-  // Компонент аватарки
-  const Avatar = ({ u, self }) => {
-      // Если это "Я" и у меня есть фото в тг - показываем
-      if (self && tg?.initDataUnsafe?.user?.photo_url) {
-          return <img src={tg.initDataUnsafe.user.photo_url} className="ava" />;
-      }
-      // Если это фейк - маска
+  // Компонент аватарки (умеет: tg фото для себя, mi.png как дефолт, авы для топов через API)
+  const Avatar = ({ u = {}, self = false }) => {
+      const [broken, setBroken] = useState(false);
+
+      // фейк — маска (без фото)
       if (u.is_fake) return <div className="ava-ph fake">🎭</div>;
-      
-      // Иначе - красивые инициалы
-      const letter = u.name[1] ? u.name[1].toUpperCase() : 'U';
+
+      const url = self
+        ? (data?.user?.avatar_url || tg?.initDataUnsafe?.user?.photo_url || "/mi.png")
+        : (u.id ? `${API_URL}/avatar/${u.id}` : null);
+
+      if (url && !broken) {
+        return <img src={url} className="ava" onError={() => setBroken(true)} />;
+      }
+
+      // красивые инициалы (fallback)
+      const name = (u.name || u.username || 'User').toString();
+      const letter = name[0] ? name[0].toUpperCase() : 'U';
       const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6'];
       const bg = colors[letter.charCodeAt(0) % colors.length];
       return <div className="ava-ph" style={{background: bg}}>{letter}</div>;
@@ -155,9 +162,12 @@ function App() {
                    <div className="ph-role">{data.user.status}</div>
                </div>
                <div className="ph-main">
-                   <Avatar u={{name: data.user.username}} self={true} />
+                   <Avatar self={true} />
                    <div className="ph-names">
-                       <div className="ph-nick">{data.user.username}</div>
+                       <div className="ph-nick">{data.user.real_username}</div>
+                        {data.user.fake_tag && data.user.fake_enabled ? (
+                          <div className="ph-faketag">{data.user.fake_tag}</div>
+                        ) : null}
                        <div className="ph-mentor">Наставник: {data.user.mentor}</div>
                    </div>
                </div>
@@ -223,7 +233,8 @@ function App() {
 
             <div className="top-tabs">
                 <div className={topTab==='day'?'active':''} onClick={()=>setTopTab('day')}>День</div>
-                <div className={topTab==='month'?'active':''} onClick={()=>setTopTab('month')}>Месяц</div>
+                <div className={topTab==='week'?'active':''} onClick={()=>setTopTab('week')}>Неделя</div>
+                 <div className={topTab==='month'?'active':''} onClick={()=>setTopTab('month')}>Месяц</div>
                 <div className={topTab==='all'?'active':''} onClick={()=>setTopTab('all')}>Все время</div>
             </div>
 
