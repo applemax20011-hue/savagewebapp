@@ -5,25 +5,36 @@ import './index.css';
 // ⚠️ ССЫЛКА NGROK
 const API_URL = "https://unmummied-lethargically-loretta.ngrok-free.dev/api";
 
+// Звуки (только для ракетки)
 const SOUNDS = {
-  win: "https://cdn.freesound.org/previews/270/270402_5123851-lq.mp3",
   spin: "https://cdn.freesound.org/previews/45/45903_232777-lq.mp3",
+  win: "https://cdn.freesound.org/previews/270/270402_5123851-lq.mp3",
 };
 const playSound = (k) => { try { const a = new Audio(SOUNDS[k]); a.volume=0.4; a.play().catch(()=>{}); } catch(e){} };
-
-// Словарь ачивок
-const ACH_MAP = {
-    "first_profit": { t: "Первая кровь", i: "🩸" },
-    "cash_100k": { t: "Акула Бизнеса", i: "🦈" },
-    "cash_500k": { t: "Миллионер", i: "💰" },
-    "top_1": { t: "Царь Горы", i: "👑" },
-    "week_survivor": { t: "Выживший", i: "🔥" }
-};
 
 const ITEMS = [
   { id: 'empty', name: "💀", color: '#444' },
   { id: 'check', name: "💵", color: '#10b981' },
   { id: 'status', name: "💎", color: '#d946ef' }
+];
+
+const ACH_NAMES = {
+    "first_profit": "Первая кровь 🩸",
+    "cash_100k": "Акула бизнеса 🦈",
+    "cash_500k": "Миллионер 💰",
+    "top_1": "Легенда 👑",
+    "week_survivor": "Выживший 🔥"
+};
+
+const SERVICES_LIST = [
+    { t: "📊 Обмен OKX", u: "https://t.me/OKXCrypto_Robot" },
+    { t: "🌐 Web Trade", u: "https://t.me/ForbexTradeBot" },
+    { t: "💊 Наркошоп", u: "https://t.me/ReagentShopBot" },
+    { t: "🔞 Эскорт", u: "https://t.me/RoyaleEscort_Robot" },
+    { t: "🖼 NFT Scam", u: "https://t.me/CheckRefaundRuBot" },
+    { t: "🆘 Поддержка", u: "https://t.me/SavageTP_Bot" },
+    { t: "📚 Мануалы", u: "https://telegra.ph/MANUAL-001" },
+    { t: "📋 Правила", u: "https://telegra.ph/RULES-SAVAGE-001" } // Замени ссылку на свою
 ];
 
 function App() {
@@ -38,6 +49,9 @@ function App() {
   const [winData, setWinData] = useState(null);
   const [statusText, setStatusText] = useState("");
   const [statusSent, setStatusSent] = useState(false);
+  const [fastMode, setFastMode] = useState(false);
+
+  // Top Tab
   const [topTab, setTopTab] = useState('day'); // day, week, month, all
 
   // Mentor
@@ -76,7 +90,7 @@ function App() {
     
     setData(p => ({...p, user: {...p.user, spins: p.user.spins - 1}}));
     setSpinning(true);
-    playSound('spin');
+    if(!fastMode) playSound('spin');
 
     try {
       const res = await fetch(`${API_URL}/play`, {
@@ -99,11 +113,16 @@ function App() {
         if(winner.id !== 'empty') {
            playSound('win');
            setWinData({ type: winner.id === 'check' ? 'money' : 'status', val: winner.name });
-           confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+           confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
            if(tg) tg.HapticFeedback.notificationOccurred('success');
+        } else {
+           if(tg) tg.HapticFeedback.impactOccurred('light');
         }
-      }, 5000);
-    } catch(e) { setSpinning(false); setData(p => ({...p, user: {...p.user, spins: p.user.spins + 1}})); }
+      }, fastMode ? 500 : 5000);
+    } catch(e) { 
+        setSpinning(false); 
+        setData(p => ({...p, user: {...p.user, spins: p.user.spins + 1}})); 
+    }
   };
 
   const sendStatus = async () => {
@@ -125,75 +144,51 @@ function App() {
     if(tg) tg.showAlert("Сохранено!");
   };
 
-  // Компонент аватарки (умеет: tg фото для себя, mi.png как дефолт, авы для топов через API)
-  const Avatar = ({ u = {}, self = false }) => {
-      const [broken, setBroken] = useState(false);
-
-      // фейк — маска (без фото)
-      if (u.is_fake) return <div className="ava-ph fake">🎭</div>;
-
-      const url = self
-        ? (data?.user?.avatar_url || tg?.initDataUnsafe?.user?.photo_url || "/mi.png")
-        : (u.id ? `${API_URL}/avatar/${u.id}` : null);
-
-      if (url && !broken) {
-        return <img src={url} className="ava" onError={() => setBroken(true)} />;
-      }
-
-      // красивые инициалы (fallback)
-      const name = (u.name || u.username || 'User').toString();
-      const letter = name[0] ? name[0].toUpperCase() : 'U';
-      const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6'];
-      const bg = colors[letter.charCodeAt(0) % colors.length];
-      return <div className="ava-ph" style={{background: bg}}>{letter}</div>;
+  // Компонент Аватарки
+  const UserAvatar = ({ u, self }) => {
+    if (self && tg?.initDataUnsafe?.user?.photo_url) {
+        return <img src={tg.initDataUnsafe.user.photo_url} className="ava" />;
+    }
+    if (u.is_fake) return <div className="ava-ph fake">🎭</div>;
+    
+    // Генерация цвета по имени
+    const l = (u.name[1] || 'U').toUpperCase();
+    const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6'];
+    const bg = colors[l.charCodeAt(0) % colors.length];
+    return <div className="ava-ph" style={{background: bg}}>{l}</div>;
   };
 
-  if(loading) return <div className="loader">SAVAGE OS</div>;
+  if(loading) return <div className="loader">SAVAGE TEAM<br/><span>Загрузка...</span></div>;
 
   return (
     <div className="app-container">
       
-      {/* --- ПРОФИЛЬ --- */}
+      {/* --- 1. ПРОФИЛЬ --- */}
       {tab === 'profile' && (
          <div className="page animate-up">
             <div className="profile-header">
                <div className="ph-top">
-                   <div className="ph-id">ID: {data.user.id}</div>
-                   <div className="ph-role">{data.user.status}</div>
-               </div>
-               <div className="ph-main">
-                   <Avatar self={true} />
-                   <div className="ph-names">
-                       <div className="ph-nick">{data.user.real_username}</div>
-                        {data.user.fake_tag && data.user.fake_enabled ? (
-                          <div className="ph-faketag">{data.user.fake_tag}</div>
-                        ) : null}
-                       <div className="ph-mentor">Наставник: {data.user.mentor}</div>
-                   </div>
+                  <div className="ph-badge">{data.user.status}</div>
+                  <div className="ph-id">ID: {data.user.id}</div>
                </div>
                
-               <div className="total-block">
-                   <div className="tb-label">Общий профит</div>
-                   <div className="tb-val">{data.user.total_earned.toLocaleString()} ₽</div>
+               <div className="ph-main">
+                  <UserAvatar u={{name: data.user.username}} self={true} />
+                  <div className="ph-info">
+                      <div className="ph-nick">{data.user.username}</div>
+                      {data.user.fake_tag && <div className="ph-tag">Fake: {data.user.fake_tag}</div>}
+                      <div className="ph-ment">Наставник: {data.user.mentor}</div>
+                  </div>
+               </div>
+
+               <div className="balance-card">
+                   <div className="bc-label">ОБЩИЙ ПРОФИТ</div>
+                   <div className="bc-val">{data.user.balance.toLocaleString()} ₽</div>
+                   <div className="bc-sub">Всего профитов: {data.user.profits_count}</div>
                </div>
             </div>
 
-            <div className="stats-grid">
-               <div className="st-item">
-                   <span>Текущий баланс</span>
-                   <b>{data.user.balance.toLocaleString()} ₽</b>
-               </div>
-               <div className="st-item">
-                   <span>Профитов</span>
-                   <b>{data.user.profits_count}</b>
-               </div>
-               <div className="st-item">
-                   <span>В тиме</span>
-                   <b>{data.user.days_with_us} дн.</b>
-               </div>
-            </div>
-
-            <h3 className="section-head">ИСТОРИЯ ОПЕРАЦИЙ</h3>
+            <h3 className="section-head">ИСТОРИЯ ПРОФИТОВ</h3>
             <div className="hist-list">
                {data.history.map((h,i) => (
                   <div key={i} className="h-card">
@@ -204,65 +199,74 @@ function App() {
                      <div className="h-sum">+{h.sum.toLocaleString()} ₽</div>
                   </div>
                ))}
-               {data.history.length === 0 && <div className="empty">Операций пока нет</div>}
+               {data.history.length === 0 && <div className="empty">Профитов пока нет</div>}
             </div>
          </div>
       )}
 
-      {/* --- КАРТА --- */}
+      {/* --- 2. КАРТА --- */}
       {tab === 'card' && (
          <div className="page animate-up">
-            <h3 className="section-head">РЕКВИЗИТЫ</h3>
-            <div className="card-vis" onClick={() => {navigator.clipboard.writeText(data.card.number); if(tg) tg.showAlert('Скопировано');}}>
-               <div className="bank-logo">{data.card.bank}</div>
-               <div className="card-chip"></div>
-               <div className="card-number">{data.card.number}</div>
-               <div className="card-holder">{data.card.fio}</div>
-               <div className="card-copy">Нажми чтобы скопировать</div>
+            <h3 className="section-head">РЕКВИЗИТЫ ДЛЯ ЗАЛИВА</h3>
+            <div className="bank-card" onClick={() => {navigator.clipboard.writeText(data.card.number); if(tg) tg.showAlert('Скопировано');}}>
+               <div className="bc-bank">{data.card.bank}</div>
+               <div className="bc-chip"></div>
+               <div className="bc-num">{data.card.number}</div>
+               <div className="bc-holder">{data.card.fio}</div>
+               <div className="bc-copy">Нажми чтобы скопировать</div>
             </div>
+            <div className="hint-text">Всегда сверяйте реквизиты перед переводом!</div>
          </div>
       )}
 
-      {/* --- ТОПЫ --- */}
+      {/* --- 3. ТОПЫ --- */}
       {tab === 'tops' && (
          <div className="page animate-up">
-            <div className="total-kassa">
-                <span>ОБЩАЯ КАССА ПРОЕКТА</span>
+            <div className="kassa-block">
+                <span>ОБЩАЯ КАССА</span>
                 <b>{data.kassa.toLocaleString()} ₽</b>
             </div>
 
-            <div className="top-tabs">
-                <div className={topTab==='day'?'active':''} onClick={()=>setTopTab('day')}>День</div>
-                <div className={topTab==='week'?'active':''} onClick={()=>setTopTab('week')}>Неделя</div>
-                 <div className={topTab==='month'?'active':''} onClick={()=>setTopTab('month')}>Месяц</div>
-                <div className={topTab==='all'?'active':''} onClick={()=>setTopTab('all')}>Все время</div>
+            <div className="tabs-row">
+                {['day', 'week', 'month', 'all'].map(t => (
+                    <div key={t} className={`tab-pill ${topTab===t?'active':''}`} onClick={()=>setTopTab(t)}>
+                        {t==='day'?'День':t==='week'?'Неделя':t==='month'?'Месяц':'Все'}
+                    </div>
+                ))}
             </div>
 
             <div className="top-list">
                {(data.tops[topTab] || []).map((u,i) => (
                   <div key={i} className="top-row">
                      <div className="tr-rank">{i+1}</div>
-                     <Avatar u={u} />
+                     <UserAvatar u={u} />
                      <div className="tr-info">
                          <div className="tr-name">{u.name}</div>
                          <div className="tr-sum">{u.sum.toLocaleString()} ₽</div>
                      </div>
                   </div>
                ))}
-               {(data.tops[topTab] || []).length === 0 && <div className="empty">Пока пусто...</div>}
+               {(data.tops[topTab] || []).length === 0 && <div className="empty">Тут пока пусто...</div>}
             </div>
          </div>
       )}
 
-      {/* --- РАКЕТКА --- */}
+      {/* --- 4. РАКЕТКА --- */}
       {tab === 'game' && (
          <div className="page animate-up game-center">
             <h1 className="rocket-title">РАКЕТКА</h1>
+            
+            <div className="controls-top">
+                <div className={`toggle ${fastMode ? 'active' : ''}`} onClick={() => setFastMode(!fastMode)}>
+                    ⚡ ТУРБО
+                </div>
+            </div>
+
             <div className="roulette-box">
                <div className="arrow-down"></div>
                <div className="track" style={{
                    transform: `translateX(${offset}px)`, 
-                   transition: spinning ? 'transform 5s cubic-bezier(0.1,0,0.1,1)' : 'none'
+                   transition: spinning ? `transform ${fastMode ? 0.5 : 5}s cubic-bezier(0.1,0,0.1,1)` : 'none'
                }}>
                   {cards.map((c,i)=>(
                      <div key={i} className="r-card" style={{borderBottom: `3px solid ${c.color}`}}>
@@ -271,35 +275,18 @@ function App() {
                   ))}
                </div>
             </div>
+            
             <button className="spin-btn" disabled={spinning} onClick={spin}>
                КРУТИТЬ ({data.user.spins})
             </button>
+            <div className="hint-text">1 профит = 1 спин. Призы: Статус, Деньги.</div>
          </div>
       )}
 
-      {/* --- АЧИВКИ --- */}
-      {tab === 'ach' && (
+      {/* --- 5. ИНФО (Сервисы + Ачивки) --- */}
+      {tab === 'info' && (
          <div className="page animate-up">
-            <h3 className="section-head">ДОСТИЖЕНИЯ</h3>
-            <div className="ach-list">
-               {data.achievements.map((key,i) => {
-                  const info = ACH_MAP[key] || {t: key, i: '🏅'};
-                  return (
-                      <div key={i} className="ach-card">
-                          <div className="ach-icon">{info.i}</div>
-                          <div className="ach-name">{info.t}</div>
-                      </div>
-                  )
-               })}
-               {data.achievements.length === 0 && <div className="empty">У вас пока нет достижений</div>}
-            </div>
-         </div>
-      )}
-
-      {/* --- СЕРВИСЫ --- */}
-      {tab === 'services' && (
-         <div className="page animate-up">
-            <h3 className="section-head">СЕРВИСЫ</h3>
+            <h3 className="section-head">СЕРВИСЫ И БОТЫ</h3>
             <div className="serv-grid">
                {data.services.map((s,i)=>(
                   <a key={i} href={s.u} className="serv-btn">
@@ -307,33 +294,48 @@ function App() {
                   </a>
                ))}
             </div>
+
+            <h3 className="section-head" style={{marginTop: 30}}>ТВОИ ДОСТИЖЕНИЯ</h3>
+            <div className="ach-list">
+               {data.achievements.map((key,i) => {
+                  const name = ACH_NAMES[key] || key;
+                  return (
+                      <div key={i} className="ach-card">
+                          🏆 {name}
+                      </div>
+                  )
+               })}
+               {data.achievements.length === 0 && <div className="empty">Нет достижений</div>}
+            </div>
          </div>
       )}
 
-      {/* --- МЕНТОР --- */}
+      {/* --- 6. МЕНТОР --- */}
       {tab === 'mentor' && data.is_mentor && (
          <div className="page animate-up">
-            <h3 className="section-head">ПАНЕЛЬ НАСТАВНИКА</h3>
+            <h3 className="section-head">КАБИНЕТ НАСТАВНИКА</h3>
             <div className="m-stats">
-                 <div><span>Оборот:</span> <b>{data.mentor_panel.turnover.toLocaleString()} ₽</b></div>
-                 <div><span>Учеников:</span> <b>{data.mentor_panel.students.length}</b></div>
+                 <div className="ms-item"><span>Оборот</span> <b>{data.mentor_panel.turnover.toLocaleString()} ₽</b></div>
+                 <div className="ms-item"><span>Ученики</span> <b>{data.mentor_panel.students.length}</b></div>
             </div>
             
             <form onSubmit={saveMentor} className="m-form">
-                <label>Инфо:</label>
+                <label>Информация о себе:</label>
                 <textarea name="info" defaultValue={mentorForm.info}></textarea>
-                <label>Процент:</label>
+                <label>Твой процент (%):</label>
                 <input name="fee" type="number" defaultValue={mentorForm.fee}/>
-                <button>СОХРАНИТЬ</button>
+                <button>СОХРАНИТЬ ИЗМЕНЕНИЯ</button>
             </form>
 
-            <h4 style={{marginTop:20}}>Мои ученики:</h4>
-            {data.mentor_panel.students.map((s,i)=>(
-                <div key={i} className="st-row">
-                    <div>{s.name}</div>
-                    <b>{s.balance} ₽</b>
-                </div>
-            ))}
+            <h4 style={{marginTop:20, color:'#888'}}>СПИСОК УЧЕНИКОВ</h4>
+            <div className="st-list">
+                {data.mentor_panel.students.map((s,i)=>(
+                    <div key={i} className="st-row">
+                        <div>{s.name}</div>
+                        <b>{s.balance.toLocaleString()} ₽</b>
+                    </div>
+                ))}
+            </div>
          </div>
       )}
 
@@ -343,24 +345,27 @@ function App() {
          <div className={tab==='card'?'active':''} onClick={()=>setTab('card')}>Карта</div>
          <div className={tab==='tops'?'active':''} onClick={()=>setTab('tops')}>Топы</div>
          <div className={tab==='game'?'active':''} onClick={()=>setTab('game')}>Ракетка</div>
-         <div className={tab==='ach'?'active':''} onClick={()=>setTab('ach')}>Ачивки</div>
-         <div className={tab==='services'?'active':''} onClick={()=>setTab('services')}>Сервисы</div>
+         <div className={tab==='info'?'active':''} onClick={()=>setTab('info')}>Инфо</div>
          {data.is_mentor && <div className={tab==='mentor'?'active':''} onClick={()=>setTab('mentor')}>Ментор</div>}
       </div>
 
-      {/* WIN MODAL */}
+      {/* MODAL WIN */}
       {winData && (
          <div className="modal-overlay" onClick={()=>setWinData(null)}>
             <div className="modal-box" onClick={e=>e.stopPropagation()}>
-               <h2>{winData.type==='money'?'ВЫИГРЫШ!':'СТАТУС!'}</h2>
-               {winData.type==='money' ? <h1>{winData.val}</h1> : <p>Теперь вы можете сменить статус!</p>}
+               <div className="glow"></div>
+               <h2>{winData.type==='money'?'ВЫИГРЫШ!':'ПОБЕДА!'}</h2>
+               {winData.type==='money' ? <h1>{winData.val}</h1> : <p>Вы выиграли смену статуса!</p>}
+               
                {winData.type==='status' && !statusSent && (
                   <div className="st-box">
-                     <input placeholder="Текст..." onChange={e=>setStatusText(e.target.value)} maxLength={15}/>
-                     <button onClick={sendStatus}>ОТПРАВИТЬ</button>
+                     <input placeholder="Новый статус..." onChange={e=>setStatusText(e.target.value)} maxLength={15}/>
+                     <button onClick={sendStatus}>ОТПРАВИТЬ АДМИНУ</button>
                   </div>
                )}
-               {statusSent && <div className="ok">Отправлено!</div>}
+               {statusSent && <div className="ok">✅ Заявка отправлена</div>}
+               {winData.type === 'money' && <p className="sub">Ожидайте выплату чеком от администратора.</p>}
+               
                <button className="close" onClick={()=>setWinData(null)}>ЗАКРЫТЬ</button>
             </div>
          </div>
